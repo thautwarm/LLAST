@@ -1,0 +1,6 @@
+C:\Users\twshe\github\LLL\LLL\LLL\bin\Debug\netcoreapp2.0\LLL.deps.json
+C:\Users\twshe\github\LLL\LLL\LLL\bin\Debug\netcoreapp2.0\LLL.runtimeconfig.json
+C:\Users\twshe\github\LLL\LLL\LLL\bin\Debug\netcoreapp2.0\LLL.runtimeconfig.dev.json
+C:\Users\twshe\github\LLL\LLL\LLL\bin\Debug\netcoreapp2.0\LLL.dll
+C:\Users\twshe\github\LLL\LLL\LLL\obj\Debug\netcoreapp2.0\LLL.fsprojResolveAssemblyReference.cache
+C:\Users\twshe\github\LLL\LLL\LLL\obj\Debug\netcoreapp2.0\LLL.fsproj.CoreCompileInputs.cache
