@@ -42,8 +42,8 @@ type lll =
     | Val       of value
     | Defun     of func
     | Deftype   of ``type``
-    | App       of func * ((value * value) list)
-    | Lam       of (value list) * lll
+    | App       of value  list
+    | Lam       of func
 
 and value = {
     actual_name : string 
@@ -55,5 +55,5 @@ and func = {
     arg_tys  : ``type`` list
     formals  : string list
     ret_ty   : ``type`` 
-    body      : lll
+    body     : lll
 }
