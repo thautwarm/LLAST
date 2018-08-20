@@ -1,12 +1,12 @@
-﻿module Machine
+﻿module LLL.Machine
 
 open LLL.ASDL
 
-type hashmap<'k, 'v> = System.Collections.Generic.Dictionary<'k, 'v>
+type hashtable<'k, 'v> = System.Collections.Generic.Dictionary<'k, 'v>
 
 type context = {
     prefix                  : string
-    ``global``              : hashmap<string, ``type``> // the only external scope in LLL is global scope.
+    ``global``              : hashtable<string, ``type``> // the only external scope in LLL is global scope.
     bounds                  : Map<string, ``type``>
     mutable anonymous_count : int
     }
@@ -35,12 +35,16 @@ let call(func) (args) : llvm =
 let deftype (ty: ``type``) : llvm = 
     failwith "not impl yet"
 
+let literal (data : data): llvm = 
+    failwith "not impl yet"
+
+let branch(test) (exp1) (exp2)
    
-let rec emit (asdl : lll) (context: context) =
+let rec emit (asdl : lll) (context: context) : llvm =
     match asdl with 
     
-    | Lit data  -> 
-        failwith "not impl yet"
+    | Lit data ->
+        literal data
     
     | Val {actual_name = actual; lexer_name = lexer}  ->
         // LOAD
@@ -70,7 +74,7 @@ let rec emit (asdl : lll) (context: context) =
 
         in defun head body
     
-    | App(func :: arg_lst) ->
+    | App(func, arg_lst) ->
         let load_val (value : value) = load value.actual_name <| context.find func.lexer_name
         let func = load_val func 
         let arg_lst = 
@@ -78,7 +82,10 @@ let rec emit (asdl : lll) (context: context) =
         in call func arg_lst
     
 
-    | Deftype ``type`` -> deftype(``type``)
+    | Deftype(name, ``type``) -> 
+        let name = mangle context.prefix name 
+        context.``global``.[name] <- ``type``
+        deftype(``type``)
 
     | Lam  {arg_tys = arg_typs
             formals = formals
@@ -88,7 +95,10 @@ let rec emit (asdl : lll) (context: context) =
         let name    = sprintf "<anonymous%d>" context.anonymous_count
         let ty      =  Func(arg_typs, ret_ty)
         let head    =  load name ty
-        context.``global``.[name] <- Func(arg_typs, ret_ty)
+        context.``global``.[name] <- Func(arg_typs, ret_ty)  
+        // TODO: 
+        // if no return of the lambda occurred in function body, 
+        // the type of lambda can be removed from global
         let prefix  = mangle context.prefix name
         let context =
             // You see no closure here.
@@ -101,9 +111,10 @@ let rec emit (asdl : lll) (context: context) =
         
         let body = emit body context
         in defun head body
+    | IfExp(cond, exp1, exp2) ->
+        
     
-    | Lit data ->
-        failwith "not impl yet"
+    
 
 
 

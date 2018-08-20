@@ -41,9 +41,11 @@ type lll =
     | Lit       of data
     | Val       of value
     | Defun     of func
-    | Deftype   of ``type``
-    | App       of value  list
+    | Deftype   of string * ``type``
+    | App       of value * value  list
     | Lam       of func
+    | IfExp     of value * lll * lll 
+    
 
 and value = {
     actual_name : string 
