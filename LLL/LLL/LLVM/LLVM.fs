@@ -120,5 +120,5 @@ and binary_operation = binary_operator * llvm * llvm
 
 and symbol = {
     ty       : ``type``
-    name     : string option
+    name     : string
 }
