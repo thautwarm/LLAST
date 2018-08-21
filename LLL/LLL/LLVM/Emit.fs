@@ -84,19 +84,24 @@ let emit (cr: compiler) =
             let {ty=lty; name = lname} = inner context lhs
             let {ty=rty; name = rname} = inner context rhs
             let cmp_cond =
-                match comparator, lty with
-                | Eq, I _ -> "eq"
-                | Eq, F _ -> "oeq"
-                | Ne, I _ -> "ne"
-                | Ne, F _ -> "one"
-                | Gt, I _ -> "sgt"
-                | Gt, F _ -> "ogt"
-                | Ge, I _ -> "sge"
-                | Ge, F _ -> "oge"
-                | Lt, I _ -> "slt"
-                | Lt, F _ -> "olt"
-                | Le, I _ -> "sle"
-                | Le, F _ -> "ole"
+                let rec get_inst =
+                    function
+                    | op, Vec(_, ty) -> get_inst(op, ty)
+                    | Eq, I _ -> "eq"
+                    | Eq, F _ -> "oeq"
+                    | Ne, I _ -> "ne"
+                    | Ne, F _ -> "one"
+                    | Gt, I _ -> "sgt"
+                    | Gt, F _ -> "ogt"
+                    | Ge, I _ -> "sge"
+                    | Ge, F _ -> "oge"
+                    | Lt, I _ -> "slt"
+                    | Lt, F _ -> "olt"
+                    | Le, I _ -> "sle"
+                    | Le, F _ -> "ole"
+                    | _, (_ as t) -> failwithf "invalid comparison on %A" t
+                get_inst(comparator, lty)
+
             match lty, rty with
             | I bit, I bit' when bit = bit' ->
                 let type_str = dump_type (I bit)
@@ -134,6 +139,7 @@ let emit (cr: compiler) =
             let is_float = function
                 | F _, F _ -> true
                 | Vec(n, F _), Vec(n', F _) when n = n' -> true
+                | _ -> false
 
             let is_ptr_int_conv = function
                 | Vec(n, Ptr _), Vec(n', I _) when n = n' -> true
