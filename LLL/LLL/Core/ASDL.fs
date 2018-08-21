@@ -37,15 +37,18 @@ type typed_data = {
     ty   : ``type``
 }
 
+
 type lll =
     | Lit       of data
     | Val       of value
     | Defun     of func
     | Deftype   of string * ``type``
-    | App       of value * value  list
+    | App       of value * value list
     | Lam       of func
-    | IfExp     of value * lll * lll 
-    
+    | IfExp     of lll * lll * lll
+    | Suite     of Suite
+
+and Suite = lll list
 
 and value = {
     actual_name : string 

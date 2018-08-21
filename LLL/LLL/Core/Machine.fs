@@ -19,8 +19,6 @@ type context = {
         | (true, ``type``) -> ``type``
         | _         -> failwith <| sprintf "Name %A not found." name
 
-type llvm = LLVM 
-
 let mangle (prefix: string) (lexer: string) = sprintf "%s.%s" prefix lexer
     
 let load (name: string) (``type``: ``type``): llvm = 
