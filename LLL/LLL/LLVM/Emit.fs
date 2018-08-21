@@ -26,7 +26,16 @@ type compiler = {
     member this.write(code: string) =
         this.codes.Add <| System.String(' ', this.indent) + code
         ()
-
+    member this.write_no_indent(code: string) =
+        this.codes.Add <| code
+        ()
+    member this.pending(): int =
+        this.codes.Add("<pending>")
+        this.codes.Count
+    member this.decide idx code =
+        this.codes.[idx] <- code
+        ()
+        
 let rec dump_type : ``type`` -> string =
     function
     | I bit   -> sprintf "i%d" bit
@@ -71,6 +80,19 @@ let rec typed_data : constant -> (``type`` * string) = function
         ty, "undef"
     | _ as it  -> failwith <| sprintf "unsupported data %A" it
 
+let get_align_from_ty ty : int = raise <| NotImplementedException()
+let store' ty val_name ptr_name =
+    let ty = dump_type ty
+    sprintf "store %s %s, %s* %s" ty val_name ty ptr_name
+let alloca' ty maybe_val_name  =
+    let align = get_align_from_ty ty
+    let ty    = dump_type ty
+    match maybe_val_name with
+    | None -> sprintf "alloca %s, align %d" ty align
+    | Some(val_name) -> sprintf "alloca %s, %s %s, align %d" ty ty val_name align
+let load' ty ptr_name =
+    let ty = dump_type ty
+    sprintf "load %s, %s* %s" ty ty ptr_name
 let emit (cr: compiler) =
     let rec inner(context: context) (llvm: llvm): symbol =
         let assign_tmp code =
@@ -80,6 +102,7 @@ let emit (cr: compiler) =
         match llvm with
         | Const constant ->
             let ty, code = typed_data constant
+            // nvr Void type here
             {ty = ty; name = assign_tmp code}
         | Comp(comparator, lhs, rhs) ->
             let {ty=lty; name = lname} = inner context lhs
@@ -117,6 +140,7 @@ let emit (cr: compiler) =
                 let code = sprintf "icmp %s %s %s, %s" cmp_cond type_str lname rname
                 {ty = Arr(n, I 1); name = assign_tmp code}
             | _ -> failwithf "invalid comparison for %A %A" lhs rhs
+
         | Conv conversion ->
             let routine inst sym dest =
                 let {ty=ty; name=name} = sym
@@ -197,16 +221,75 @@ let emit (cr: compiler) =
                 | Sub, Vec(_, I _) -> "sub"
                 | Sub, F _
                 | Sub, Vec(_, F _) -> "fsub"
-                | _ ->
-                    raise <| NotImplementedException()
+                | Mul, I _
+                | Mul, Vec(_, I _) -> "mul"
+                | Mul, F _
+                | Mul, Vec(_, F _) -> "fmul"
+                | Rem, I _
+                | Rem, Vec(_, I _) -> "srem"
+                | Rem, F _
+                | Rem, Vec(_, F _) -> "frem"
+                | Div, I _
+                | Div, Vec(_, I _) -> "sdiv"
+                | Div, F _
+                | Div, Vec(_, F _) -> "fdiv"
+                | LSh, I _
+                | LSh, Vec(_, I _) -> "shl"
+                | LShr, I _
+                | LShr, Vec(_, I _) -> "lshr"
+                | AShr, I _
+                | AShr, Vec(_, I _) -> "ashr"
+                | And, I _
+                | And, Vec(_, I _) -> "and"
+                | Or, I _
+                | Or, Vec(_, I _) -> "or"
+                | XOr, I _
+                | XOr, Vec(_, I _) -> "xor"
+                | _ -> failwithf "invalid binary operation %A." bin
             let code = sprintf "%s %s %s, %s" inst <| dump_type ty <| l.name <| r.name
             in
             {ty = ty; name = assign_tmp code}
-                
-
-
-                
+        | Cf control_flow ->
+            match control_flow with
+            | Return exp ->
+                let {ty = ty; name = name} = inner context exp
+                match ty with
+                | Void ->
+                    cr.write "ret void"
+                    void_symbol
+                | _   ->
+                cr.write <| (sprintf "ret %s %s" <| dump_type ty <| name)
+                {ty = ty; name=name}
+            | Branch(cond, iftrue, iffalse) ->
+            let ret_name = context.alloc_name()
+            let label_true = context.alloc_name()
+            let label_false = context.alloc_name()
+            let label_end = context.alloc_name()
+            let result_idx = cr.pending()
             
+            let {ty = ty; name = cond} = inner context cond
+            if ty <> I 1 then 
+                failwithf "If-Conditional type mismatch, got %A, expected I1" ty
+            else
+            cr.write <| sprintf "br i1 %s, label %%%s, label %%%s" cond label_true label_false
+            cr.write_no_indent <| sprintf "%s:" label_true
+            let {ty=ty_t; name=name_t} = inner context iftrue
+            cr.write <| store' ty_t name_t ret_name
+            cr.write <| sprintf "br label %%%s" label_end
+            
+            cr.write_no_indent <| sprintf "%s:" label_false
+            let {ty=ty_f; name=name_f} = inner context iffalse
+            cr.write <| store' ty_f name_f ret_name
+            cr.write <| sprintf "br label %%%s" label_end            
+            
+            if ty_f <> ty_t then
+                failwithf "If-Else type mismatch %A <> %A." ty_f ty_t
+            else 
+            cr.write_no_indent <| sprintf "%s:" label_end
+            let name = assign_tmp <| load' ty_t ret_name
+            cr.decide result_idx <| alloca' ty_f None
+            {ty=ty_t; name = name}
+
         | Sym symbol ->
             symbol
         | _ -> failwith ""

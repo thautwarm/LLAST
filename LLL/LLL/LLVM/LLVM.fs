@@ -1,5 +1,4 @@
-﻿
-module IR
+﻿module IR
 
 type llvm =
 | Const  of constant
@@ -96,7 +95,7 @@ and memory_access =
 // getelementptr <ty>, <ty>* <ptr>, i32 idx, i32 offset, ...offsets
 
 and control_flow =
-| Return of ``type``
+| Return of llvm
 // ret <ty> data
 // ret void
 | Branch of cond: llvm * iftrue: llvm * iffalse: llvm
@@ -122,3 +121,6 @@ and symbol = {
     ty       : ``type``
     name     : string
 }
+
+let void_symbol = {ty = Void; name = "<void>"}
+
