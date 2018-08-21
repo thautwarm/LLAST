@@ -2,6 +2,7 @@
 module Emit
 
 open IR
+open System
 
 type ('k, 'v) hashtable = System.Collections.Generic.Dictionary<'k, 'v>
 type 't arraylist = System.Collections.Generic.List<'t>
@@ -177,6 +178,35 @@ let emit (cr: compiler) =
             | Bitcast(src, dest)    -> cond_routine is_int  "bitcast" src dest
 
             | Convert(src, dest)    -> convert src dest
+        | Bin bin ->
+            let bin_op, l, r = bin
+            let l = inner context l
+            let r = inner context r
+            let ty =
+                if l.ty <> r.ty then
+                    failwithf "type mismatch: %A <> %A" l.ty r.ty
+                else
+                l.ty
+            let inst =
+                match bin_op, ty with
+                | Add, I _
+                | Add, Vec(_, I _) -> "add"
+                | Add, F _
+                | Add, Vec(_, F _) -> "fadd"
+                | Sub, I _
+                | Sub, Vec(_, I _) -> "sub"
+                | Sub, F _
+                | Sub, Vec(_, F _) -> "fsub"
+                | _ ->
+                    raise <| NotImplementedException()
+            let code = sprintf "%s %s %s, %s" inst <| dump_type ty <| l.name <| r.name
+            in
+            {ty = ty; name = assign_tmp code}
+                
+
+
+                
+            
         | Sym symbol ->
             symbol
         | _ -> failwith ""
