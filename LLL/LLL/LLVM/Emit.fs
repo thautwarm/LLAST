@@ -208,58 +208,41 @@ let emit (cr: compiler) =
                     <| dump_type dest
                 {ty = dest; name = assign_tmp context code}
 
-            let cond_routine predicate inst src dest =
-                let {ty=ty;} as sym = inner context src
-                if not <| predicate(ty, dest) then failwithf "invalid trunc %A -> %A" src dest
-                else routine inst sym dest
-
-            let is_int = function
-                | I _, I _ -> true
-                | Vec(n, I _), Vec(n', I _) when n = n' -> true
+            let rec is_int_ext = function
+                | I a, I b when a < b -> true
+                | Vec(n, l), Vec(n', r) when n = n' -> is_int_ext(l, r)
                 | _ -> false
 
-            let is_float = function
-                | F _, F _ -> true
-                | Vec(n, F _), Vec(n', F _) when n = n' -> true
-                | _ -> false
-
-            let is_ptr_int_conv = function
-                | Vec(n, Ptr _), Vec(n', I _) when n = n' -> true
-                | Vec(n, I _), Vec(n', Ptr _) when n = n' -> true
-                | Ptr _, I _
-                | I   _, Ptr _ -> true
-                | _ -> false
-
-            let convert src dest =
+            let promote src dest =
                 let {ty=ty} as sym = inner context src
                 let inst =
                     let rec get_inst =
                         function
+                        | a, b when a = b -> ""
                         | Vec(n, l), Vec(n', r) when n = n' -> get_inst(l, r)
-                        | I _, F _ -> "sitofp"
-                        | F _, I _ -> "fptosi"
+                        | I _, F _   -> "sitofp"
+                        | F _, I _   -> "fptosi"
                         | Ptr _, I _ -> "ptrtoint"
                         | I _, Ptr _ -> "inttoptr"
-
-                        | a, b when a = b -> ""
+                        | I a, I b when a > b -> "trunc"
+                        | I a, I b when a < b -> "sext"
+                        | F a, F b when a > b -> "fptrunc"
+                        | F a, F b when a < b -> "fpext"
                         | _ -> failwithf "invalid convert %A -> %A" ty dest
 
                     in get_inst(ty, dest)
                 if inst = "" then sym  // if types of two sides are the same, do nothing
                 else
                 routine inst sym dest
-
             match conversion with
-            | Truncate(src, dest)   -> cond_routine is_int "trunc" src dest
-            | ZeroExt(src, dest)    -> cond_routine is_int "zext"  src dest
-            | SignExt(src, dest)    -> cond_routine is_int "sext"  src dest
-
-            | FloatTrunc(src, dest) -> cond_routine is_float "fptrunc" src dest
-            | FloatExt(src, dest)   -> cond_routine is_float "fpext" src dest
-
-            | Bitcast(src, dest)    -> cond_routine is_int  "bitcast" src dest
-
-            | Convert(src, dest)    -> convert src dest
+            | ZeroExt(src, dest)    -> 
+                 let sym = inner context src
+                 if is_int_ext(sym.ty, dest) then routine  "zext" sym dest
+                 else failwith "invalid zero extending."
+            | Bitcast(src, dest)    -> 
+                let sym = inner context src
+                routine  "bitcast" sym dest
+            | TypeCast(src, dest)    -> promote src dest
         | Bin bin ->
             let bin_op, l, r = bin
             let l = inner context l
