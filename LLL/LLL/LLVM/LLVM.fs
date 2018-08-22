@@ -44,22 +44,6 @@ and generic_comparator =
 
 and compare = generic_comparator * llvm * llvm
 
-//and float_compare =
-//// codegen: fcmp + _.tolower()
-//| Ordered   of generic_compare
-//| JustOrdered // inst:ord
-//| Unordered of generic_compare
-//| JustUnordered // une
-
-//and integral_compare =
-//// codegen: icmp + _.tolower()
-//| Unsiged of generic_compare
-//| Singed  of generic_compare
-
-//and compare =
-//| I of integral_compare * llvm * llvm 
-//| F of float_compare    * llvm * llvm
-
 and conversion =
 // where type must be one concrete type of integter or floating
 | ZeroExt    of src: llvm * dest: ``type``    // zext; Ext means extending
