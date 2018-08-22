@@ -61,13 +61,9 @@ and compare = generic_comparator * llvm * llvm
 //| F of float_compare    * llvm * llvm
 
 and conversion =
-| Truncate   of src: llvm * dest: ``type`` //trunc ... to type
 // where type must be one concrete type of integter or floating
 | ZeroExt    of src: llvm * dest: ``type``    // zext; Ext means extending
-| SignExt    of src: llvm * dest: ``type``    // sext
-| FloatTrunc of src: llvm * dest: ``type``    // fptrunc
-| FloatExt   of src: llvm * dest: ``type``    // fpext
-| Convert    of src: llvm * dest: ``type``
+| TypeCast   of src: llvm * dest: ``type``
 // prospective type pairs of src, dest :
 // (float, int) (int, float)
 // (ptr, int)  (int, ptr)
