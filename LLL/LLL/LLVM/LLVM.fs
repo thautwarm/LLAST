@@ -1,5 +1,5 @@
 ﻿module IR
-
+type 'v asoc_list = (string * 'v) list
 type llvm =
 | Const  of constant
 | Comp   of compare
@@ -9,7 +9,7 @@ type llvm =
 | Mem    of memory_access
 | Sym    of symbol
 | Suite  of llvm list
-| Define of name: string * args: symbol list * ret_ty: ``type`` * body: llvm
+| Define of name: string * args: (``type`` * string) list * ret_ty: ``type`` * body: llvm
 
 
 and constant =
@@ -26,6 +26,8 @@ and ``type`` =
 | Arr   of len: int * ``type``
 | Vec   of len: int * ``type``
 | Agg   of ``type`` list
+| Func  of ``type`` list * ``type``
+| NamedAgg of name: string * fields: (``type`` asoc_list)
 | Ptr   of ``type``
 | Void
 
@@ -83,21 +85,22 @@ and manipulate =
 | AggM of aggregate_manipulate
 
 and memory_access =
-| Alloca of ``type`` * data: constant option *  align: int option
+| Alloca of ``type`` * data: llvm option
 // alloca <ty>, align n
 // alloca <ty>, data
 // alloca <ty>
-| Load   of ``type`` * ptr: llvm
+| Load   of name: string
 // load <ty>, <ty>* <ptr>
-| Store  of ``type`` * data: llvm * ptr: llvm
+| Store  of name: string * data: llvm 
 // store <ty> <val>, <ty>* <ptr>
-| GEP    of ``type`` * ptr: llvm * idx: int * offsets: (int list)
+| GEP    of name: string * idx: llvm * offsets: int list
 // getelementptr <ty>, <ty>* <ptr>, i32 idx, i32 offset, ...offsets
 
 and control_flow =
 | Return of llvm
 // ret <ty> data
 // ret void
+| Loop of value: llvm * cond: llvm * body: llvm
 | Branch of cond: llvm * iftrue: llvm * iffalse: llvm
 // br i1 <cond>, label <iftrue>, label <iffalse>
 // br label <dest>
