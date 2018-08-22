@@ -7,4 +7,4 @@ low level lisp
 # TODO
 
 - Compatible name mangling
-- List front-end
+- Lisp front-end
