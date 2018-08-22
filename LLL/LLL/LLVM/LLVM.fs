@@ -1,4 +1,4 @@
-﻿module IR
+﻿module LLL.LLVM.IR
 type 'v asoc_list = (string * 'v) list
 type llvm =
 | Const  of constant
@@ -9,7 +9,10 @@ type llvm =
 | Mem    of memory_access
 | Sym    of symbol
 | Suite  of llvm list
-| Define of name: string * args: (``type`` * string) list * ret_ty: ``type`` * body: llvm
+| Man    of manipulate
+| App    of llvm * llvm list
+| Get    of name: string // not llvm instructions, for named variables which are not accessed by `load`.
+| Define of name: string * args: ( string * ``type``) list * ret_ty: ``type`` * body: llvm
 
 
 and constant =
@@ -84,6 +87,7 @@ and manipulate =
 | VecM of vector_manipulate
 | AggM of aggregate_manipulate
 
+
 and memory_access =
 | Alloca of ``type`` * data: llvm option
 // alloca <ty>, align n
@@ -97,7 +101,6 @@ and memory_access =
 // getelementptr <ty>, <ty>* <ptr>, i32 idx, i32 offset, ...offsets
 
 and control_flow =
-| Return of llvm
 // ret <ty> data
 // ret void
 | Loop of value: llvm * cond: llvm * body: llvm

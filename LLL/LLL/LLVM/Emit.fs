@@ -1,9 +1,7 @@
 ﻿
-module Emit
+module LLL.LLVM.Emit
 
-open IR
-open System
-open System.Net.Http
+open LLL.LLVM.IR
 
 
 type ('k, 'v) hashtable = System.Collections.Generic.Dictionary<'k, 'v>
@@ -12,20 +10,20 @@ type context = {
     ``global``    : (string, ``type``) hashtable;
     local         : (string, ``type``) hashtable;
     mutable count : int;
-    identifier    : string (** identifier of context for mangling *)
+    identifier    : string list(** identifier of context for mangling *)
     }
     with
     member this.alloc_name() =
         let ret = this.count
         this.count <- ret + 1
-        sprintf "%s %d" this.identifier ret
-    member this.fresh() =
-        {this with identifier = this.alloc_name(); count = 0; local = hashtable(this.local)}
+        sprintf "%s.%d" <| String.concat "." (List.rev this.identifier) <| ret
+
     member this.bind name ty = 
         let ref = ref IR.Void 
         match this.local.TryGetValue(name, ref) with 
         | true  -> failwithf "Name %s existed in local scope." name
         | false -> this.local.Add(name, ty)
+
     member this.find(name) = 
         let ref = ref IR.Void
         match this.local.TryGetValue(name, ref) with 
@@ -34,16 +32,15 @@ type context = {
         match this.``global``.TryGetValue(name, ref) with 
         | true -> ref.Value
         | false -> failwithf "Name %s not exists in both local and global scope." name
-    member this.into(name) = 
-        {this with identifier = name; count = 0; local = hashtable(this.local)}
+    member this.wrap name = 
+        sprintf "%s.%s" <| String.concat "." (List.rev this.identifier) <| name
 
 type compiler = {
     codes : string arraylist;
-    mutable indent : int;
     }
     with
-    member this.write(code: string) =
-        this.codes.Add <| System.String(' ', this.indent) + code
+    member this.write (indent: int) (code: string) =
+        this.codes.Add <| System.String(' ', indent) + code
         ()
     member this.write_no_indent(code: string) =
         this.codes.Add <| code
@@ -54,6 +51,8 @@ type compiler = {
     member this.decide idx code =
         this.codes.[idx] <- code
         ()
+    override this.ToString()  = 
+        String.concat "\n" this.codes
 
 let rec dump_type : ``type`` -> string =
     function
@@ -100,21 +99,26 @@ let rec typed_data : constant -> (``type`` * string) = function
         ty, "undef"
     | _ as it  -> failwith <| sprintf "unsupported data %A" it
 
-let rec get_align_from_ty ty : int = 
-    match ty with
-    | Void   -> 0
-    | Func _ -> 0
-    | F bit
-    | I bit -> Math.Max(bit/8, 1)
-    | Ptr _ -> 8
-    | Vec(_, ty) -> 8 + get_align_from_ty ty
-    | Arr(_, ty) -> 8 + get_align_from_ty ty
-    | Agg lst    ->  List.map get_align_from_ty lst |> List.max
-    | NamedAgg(_, asoc_list) -> 
-    List.map 
-    <| fun (_, ty) -> get_align_from_ty ty
-    <| asoc_list 
-    |> List.max
+let get_align_from_ty ty : int = 
+    let rec get_align_from_ty =
+        function 
+        | Void   -> 0
+        | Func _ -> 0
+        | F bit
+        | I bit -> bit/8
+        | Ptr _ -> 8
+        | Vec(_, ty) -> 8 + get_align_from_ty ty
+        | Arr(_, ty) -> 8 + get_align_from_ty ty
+        | Agg lst    ->  List.map get_align_from_ty lst |> List.max
+        | NamedAgg(_, asoc_list) -> 
+        List.map 
+        <| fun (_, ty) -> get_align_from_ty ty
+        <| asoc_list 
+        |> List.max
+    in
+    match get_align_from_ty ty with
+    | 0  -> 1
+    | it -> it 
 
     
 
@@ -127,6 +131,7 @@ let alloca' ty maybe_val_name  =
     match maybe_val_name with
     | None -> sprintf "alloca %s, align %d" ty align
     | Some(val_name) -> sprintf "alloca %s, %s %s, align %d" ty ty val_name align
+
 let load' ty ptr_name =
     let ty = dump_type ty
     sprintf "load %s, %s* %s" ty ty ptr_name
@@ -139,15 +144,15 @@ let gep' ty ptr_name idx offsets =
 let emit (cr: compiler) =
     let assign_tmp (context: context) (code: string): string =
         let name = context.alloc_name()
-        cr.write <| sprintf "%s = %s" name code
+        cr.write context.identifier.Length <| sprintf "%s = %s" name code
         name
     let rec inner(context: context) (llvm: llvm): symbol =
         let branch_of context label_start body label_end ret_name: ``type`` =
             cr.write_no_indent <| sprintf "%s:" label_start
             let {ty=ty; name=name} = inner context body
             if ty = IR.Void then ()
-            else cr.write <| store' ty name ret_name
-            cr.write <| sprintf "br label %%%s" label_end
+            else cr.write context.identifier.Length <| store' ty name ret_name
+            cr.write context.identifier.Length <| sprintf "br label %%%s" label_end
             ty
 
         match llvm with
@@ -228,17 +233,18 @@ let emit (cr: compiler) =
             let convert src dest =
                 let {ty=ty} as sym = inner context src
                 let inst =
-                    match ty, dest with
-                    | I _, F _ -> "sitofp"
-                    | Vec(n, I _), Vec(n', F _) when n = n' -> "sitofp"
-                    | F _, I _ -> "fptosi"
-                    | Vec(n, F _), Vec(n', I _) when n = n' -> "fptosi"
-                    | Ptr _, I _ -> "ptrtoint"
-                    | Vec(n, Ptr _), Vec(n', I _) when n = n' -> "ptrtoint"
-                    | I _, Ptr _ -> "inttoptr"
-                    | Vec(n, I _), Vec(n', Ptr _) when n = n' -> "inttoptr"
-                    | a, b when a = b -> ""
-                    | _ -> failwithf "invalid convert %A -> %A" ty dest
+                    let rec get_inst =
+                        function
+                        | Vec(n, l), Vec(n', r) when n = n' -> get_inst(l, r)
+                        | I _, F _ -> "sitofp"
+                        | F _, I _ -> "fptosi"
+                        | Ptr _, I _ -> "ptrtoint"
+                        | I _, Ptr _ -> "inttoptr"
+
+                        | a, b when a = b -> ""
+                        | _ -> failwithf "invalid convert %A -> %A" ty dest
+
+                    in get_inst(ty, dest)
                 if inst = "" then sym  // if types of two sides are the same, do nothing
                 else
                 routine inst sym dest
@@ -290,31 +296,27 @@ let emit (cr: compiler) =
             {ty = ty; name = assign_tmp context code}
         | Cf control_flow ->
             match control_flow with
-            | Return exp ->
-                let {ty = ty; name = name} = inner context exp
-                match ty with
-                | Void ->
-                    cr.write "ret void"
-                    void_symbol
-                | _   ->
-                cr.write <| (sprintf "ret %s %s" <| dump_type ty <| name)
-                {ty = ty; name=name}
             | Loop(value, cond, body) ->
                 let {ty = ty_of_value; name = value} = inner context value
-                let context = context.fresh()
+                let context =  {context with 
+                                        identifier = List.Cons(context.alloc_name(), context.identifier)
+                                        count = 0
+                                        local = hashtable(context.local)}
+
                 let branch_of = branch_of context
                 let ret_name = context.alloc_name()
                 let label_setup = context.alloc_name()
                 let label_loop = context.alloc_name()
                 let label_end = context.alloc_name()
-                cr.write <| alloca' ty_of_value (Some value)
+                let indent = context.identifier.Length
+                cr.write indent <| alloca' ty_of_value (Some value)
                 // setup:
                 cr.write_no_indent <| sprintf "%%%s" label_setup
                 let {ty=ty; name = cond} = inner context cond
                 if ty <> I 1 then
                     failwithf "If-Conditional type mismatch, got %A, expected i1." ty
                 else
-                cr.write <| sprintf "br i1 %s, label %%%s, label %%%s" cond label_loop label_end
+                cr.write indent <| sprintf "br i1 %s, label %%%s, label %%%s" cond label_loop label_end
                 // loop:
                 cr.write_no_indent <| sprintf "%%%s" label_loop
                 let {ty = ty; name = body} = inner context body
@@ -322,29 +324,33 @@ let emit (cr: compiler) =
                     if ty = IR.Void then 
                         fun () -> void_symbol
                     else 
-                        cr.write <| store' ty body ret_name
+                        cr.write indent <| store' ty body ret_name
                         fun () ->
                             let name = assign_tmp context <| load' ty ret_name
                             {ty = ty; name = name}
-                cr.write <| sprintf "br label %%%s" label_setup
+                cr.write indent <| sprintf "br label %%%s" label_setup
                 // end:
                 cr.write_no_indent <| sprintf "%%%s" label_end
                 exit()
 
             | Branch(cond, iftrue, iffalse) ->
-            let context = context.fresh()
+            let context = {context with 
+                                    identifier = List.Cons(context.alloc_name(), context.identifier)
+                                    count = 0
+                                    local = hashtable(context.local)}
             let branch_of = branch_of context
             let ret_name = context.alloc_name()
             let label_true = context.alloc_name()
             let label_false = context.alloc_name()
             let label_end = context.alloc_name()
             let result_idx = cr.pending()
+            let indent = context.identifier.Length
 
             let {ty = ty; name = cond} = inner context cond
             if ty <> I 1 then
                 failwithf "If-Condition type mismatch, got %A, expected I1." ty
             else
-            cr.write <| sprintf "br i1 %s, label %%%s, label %%%s" cond label_true label_false
+            cr.write indent <| sprintf "br i1 %s, label %%%s, label %%%s" cond label_true label_false
             let ty_t = branch_of label_true iftrue label_end ret_name
             let ty_f = branch_of label_true iffalse label_end ret_name
             if  ty_t <> ty_f then
@@ -382,7 +388,7 @@ let emit (cr: compiler) =
                     if ty <> ty_of_data then
                         failwithf "invalid store instruction, %A mismatch %A." ty ty_of_data
                     else
-                    cr.write <| store' ty val_name name
+                    cr.write context.identifier.Length <| store' ty val_name name
                     void_symbol
                 | _ as ty -> failwithf "invalid load instruction, expected Ptr of some type, got type %A." ty
             | GEP(name, idx, offsets) ->
@@ -418,33 +424,66 @@ let emit (cr: compiler) =
                 | [] -> void_symbol
             in loop suite
         | Define(name, args, ret, body) ->
-            let arg_types, arg_names = List.unzip args
+            let arg_types = List.map snd args
             let func_ty = IR.Func(arg_types, ret)
             let arg_string = 
                 List.map 
-                <| fun (ty, arg) -> sprintf "%s %s" <| dump_type ty <| arg
+                <| fun (arg, ty) -> sprintf "%s %s" <| dump_type ty <| arg
                 <| args
                 |> String.concat ", "
             sprintf "define %s @%s(%s){"
             <| dump_type ret 
             <| name 
             <| arg_string
-            |> cr.write
+            |> cr.write context.identifier.Length
             context.``global``.[name] <- func_ty
-            let context = context.into(name)
+            let context = {context with 
+                                    identifier = List.Cons(name, context.identifier)
+                                    count = 0
+                                    local = hashtable(Map.ofList args)}
+            let indent = context.identifier.Length
             match inner context body with
-            | {ty = IR.Void;}    -> 
-                if ret <> IR.Void then failwith "type mismatch"
+            | {ty = Void;}    -> 
+                if ret <> Void then failwith "type mismatch"
                 else {name=name; ty = func_ty}
             | {ty=ty; name=name} ->
-                if ret = IR.Void then cr.write <| "ret void"
+                if ret = Void then cr.write indent <| "ret void"
                 else if ret =  ty then
-                    cr.write <| (sprintf "ret %s %s" <| dump_type ty <| name)
+                    cr.write indent <| (sprintf "ret %s %s" <| dump_type ty <| name)
                 else failwith "type mismatch"
                 {name = name; ty = func_ty}
             |>
             fun fn ->
-                cr.write("\n}")
+                cr.write (indent-1) "\n}"
                 fn
+        | Get(name) ->
+            match context.find name with
+            | ty -> {ty = ty; name = name}
+        | App(func, args) ->
+            let {ty = fn_ty; name = fn_name} = inner context func
+            let args = List.map <| inner context <| args
+            match fn_ty with
+            | Func(fn_arg_tys, fn_ret_ty) ->
+                if fn_arg_tys <> [for each in args -> each.ty] 
+                then failwith "function input types mismatch."
+                else
+                let arg_string = 
+                    List.map
+                    <| fun {ty=ty; name=name} -> sprintf "%s %s" <| dump_type ty <| name
+                    <| args
+                    |> String.concat ", "
+                
+                match fn_ret_ty with
+                | Void -> 
+                    cr.write context.identifier.Length <| sprintf "call void %s(%s)" fn_name arg_string
+                    void_symbol
+                | _    ->
+                let fn_ret_ty_str = dump_type fn_ret_ty
+                let name = assign_tmp context 
+                           <| sprintf "call %s %s(%s)" fn_ret_ty_str fn_name arg_string
+                {name=name; ty = fn_ret_ty}
+            | _ -> failwith "function call type mismatch."
 
+        | Man(VecM _)
+        | Man(AggM _) -> failwith "not impl yet"
     in inner
