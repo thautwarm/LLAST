@@ -1,5 +1,5 @@
 ﻿module LLL.LLVM.ML
-(** 
+(**
 Meta language constructs which could be emitted to LLVM IR.
 *)
 
@@ -17,11 +17,11 @@ type ``type`` =
 
 
 type llvm =
-| Bin of binary_operation
+| Bin    of binary_operation
 (** binary operations including comparisons *)
-| App of llvm * llvm list
+| App    of llvm * llvm list
 (** application *)
-| Acc of accessing
+| Acc    of accessing
 (** data accessing and manipulations *)
 (**
 including: load, store, alloca, getelementptr
@@ -32,21 +32,22 @@ including: load, store, alloca, getelementptr
             extractelement
             insertelement
 *)
-| Get of name: string
+| Get    of name: string
 (** get local var *)
-| Let of name: string * value: llvm * body: llvm
+| Let    of name: string * value: llvm * body: llvm
 (** bind local var which create new context*)
-| Defun of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
+| Defun  of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
 (** define function **)
-| Const
+| Const  of constant
 (** constant data *)
-| Conv  of conversion
+| Conv   of conversion
 (** conversions: trunc, fptrunc, ..., bitcast *)
-| IfExp of cond: llvm * iftrue: llvm * iffalse: llvm
+| IfExp  of cond: llvm * iftrue: llvm * iffalse: llvm
 (** if-exp construct *)
-| Loop  of cond: llvm * body: llvm
+| Loop   of cond: llvm * body: llvm
 (** loop construct*)
-| DefTy of name: string * ``type`` asoc_list
+| Switch of cond: llvm * cases: (llvm * llvm) list
+| DefTy  of name: string * ``type`` asoc_list
 
 
 and binary_operator =
@@ -90,3 +91,14 @@ and accessing =
 | InsertElem  of subject: llvm * idx: int
 | ExtractVal  of subject: llvm * idx: int
 | InsertVal   of subject: llvm * idx: int
+
+
+and constant =
+| ID of bit: int * value: int64
+| FD of bit: int * value: float
+| ArrD of constant list
+| VecD of constant list
+| AggD of constant list
+| Undef
+
+
