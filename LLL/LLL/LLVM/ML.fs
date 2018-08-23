@@ -8,6 +8,7 @@ type 'a undecided = {
 }
 
 type 'v asoc_list = (string * 'v) list
+
 type ``type`` =
 | I     of bit: int
 | F     of bit: int
@@ -17,7 +18,8 @@ type ``type`` =
 | Func  of ``type`` list * ``type``
 | Ptr   of ``type``
 | Alias of name: string
-| Label of ret_ty: ``type``
+| Label
+| Wildcard (** only works when jump appears inner expression.*)
 | Void
 | PendingTy of ``type`` undecided
 
@@ -47,8 +49,12 @@ including: load, store, alloca, getelementptr
 (** constant data *)
 | Conv        of conversion
 (** conversions: trunc, fptrunc, ..., bitcast *)
+(**
+switch, indirectbr, return are all terminators and returns Wildcard.
+
+    *)
 | Switch      of cond: llvm * cases: (llvm * llvm) list
-| JumpArea    of (string * llvm) list
+| IndrBr      of cond: llvm * labels: string list
 | Return      of llvm
 (**
    where the size of list must be more than 2.
@@ -56,6 +62,7 @@ including: load, store, alloca, getelementptr
 *)
 | Jump        of name: string (** the name must be in current jump area. **)
 | DefTy       of name: string * ``type`` asoc_list
+| Mark        of name: string (** make label*)
 | PendingLLVM of llvm undecided
 
 
@@ -106,16 +113,13 @@ and accessing =
 | PendingAcc  of accessing undecided
 
 and constant =
-| ID   of bit: int * value: int64
-| FD   of bit: int * value: float
-| ArrD of constant list
-| VecD of constant list
-| AggD of constant list
-| Undef
+| ID    of bit: int * value: int64
+| FD    of bit: int * value: float
+| ArrD  of constant list
+| VecD  of constant list
+| AggD  of constant list
+| Undef of ``type``
 | PendingConst of constant undecided
 
-type symbol = {
-    lexer_name  : string
-    actual_name : string
-    ty          : ``type``
-}
+
+
