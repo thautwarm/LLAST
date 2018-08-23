@@ -12,7 +12,7 @@ type ``type`` =
 | Agg      of ``type`` list
 | Func     of ``type`` list * ``type``
 | Ptr      of ``type``
-| NamedAgg of name: string
+| Named    of name: string
 | Void
 
 
@@ -101,4 +101,8 @@ and constant =
 | AggD of constant list
 | Undef
 
-
+type symbol = {
+    lexer_name : string
+    actual_name: string
+    ty         : ``type``
+}
