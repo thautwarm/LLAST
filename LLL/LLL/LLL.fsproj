@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="LLVM\ML.fs" />
     <Compile Include="LLVM\LLVM.fs" />
     <Compile Include="LLVM\Emit.fs" />
     <!--<Compile Include="Core\Parser.fs" />

@@ -14,7 +14,6 @@ type llvm =
 | Get    of name: string // not llvm instructions, for named variables which are not accessed by `load`.
 | Define of name: string * args: ( string * ``type``) list * ret_ty: ``type`` * body: llvm
 
-
 and constant =
 | ID    of bit: int * value: int64
 | FD    of bit: int * value: float
@@ -48,9 +47,6 @@ and conversion =
 // where type must be one concrete type of integter or floating
 | ZeroExt    of src: llvm * dest: ``type``    // zext; Ext means extending
 | TypeCast   of src: llvm * dest: ``type``
-// prospective type pairs of src, dest :
-// (float, int) (int, float)
-// (ptr, int)  (int, ptr)
 | Bitcast    of src: llvm * dest: ``type``
 
 and vector_manipulate =
