@@ -1,7 +1,7 @@
-# LLL
-low level lisp
+# LLAST
 
-However now it becomes totally a LLVM binding for F#.
+Low level abstract syntax tree, in ML algebraic data types, to LLVM IR.
+
 
 
 
