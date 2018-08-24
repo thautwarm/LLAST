@@ -52,17 +52,21 @@ let main args =
 
     let formal_args = [("arg1", I 32)]
     let ret_ty = I 32
+
     let cond = Bin(Eq, Const <| ID(32, 10L), Get("arg1"))
     let branch = Branch(cond, "truelabel", "falselabel")
-    let alloc = Suite
+    
     let iftrue = Suite([Mark "truelabel"; Jump "tag"])
-    let iffalse = Suite([Mark "falselabel"; Const <| ID(32, 10L)])
-    let ret = Suite([Mark "tag"; ID(32, 15L) |> Const |> Return])
+
+    let iffalse = Suite([Mark "falselabel"; Store("result", Const <| ID(32, 10L))])
+    
+    let ifresult = Let("result", Alloca(I 32, None), Suite([iftrue; iffalse; Load("result")]))
+
+    let ret = Suite([Return ifresult; Mark "tag"; Const(ID(32, 15L)) |> Return])
+
     let whole = Defun("test3", formal_args, ret_ty, 
                       Suite [
                         branch
-                        iftrue
-                        iffalse
                         ret
                        ])
     test "jump" whole
