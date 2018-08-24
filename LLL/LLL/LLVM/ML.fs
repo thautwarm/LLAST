@@ -19,7 +19,7 @@ type ``type`` =
 | Ptr   of ``type``
 | Alias of name: string
 | Label
-| Wildcard (** only works when jump appears inner expression.*)
+| Terminator (** only works when jump appears inner expression.*)
 | Void
 | PendingTy of ``type`` undecided
 
@@ -49,22 +49,23 @@ including: load, store, alloca, getelementptr
 (** constant data *)
 | Conv        of conversion
 (** conversions: trunc, fptrunc, ..., bitcast *)
+| DefTy       of name: string * ``type`` list
+| Cont        of control_flow
+| Suite       of llvm list
+| PendingLLVM of llvm undecided
+
+and control_flow = 
 (**
 switch, indirectbr, return are all terminators and returns Wildcard.
 
     *)
-| Switch      of cond: llvm * cases: (llvm * llvm) list
+| Switch      of cond: llvm * cases: (llvm * string) list * default': string
 | IndrBr      of cond: llvm * labels: string list
 | Return      of llvm
-(**
-   where the size of list must be more than 2.
-   the area could have a return value.
-*)
-| Jump        of name: string (** the name must be in current jump area. **)
-| DefTy       of name: string * ``type`` asoc_list
 | Mark        of name: string (** make label*)
-| PendingLLVM of llvm undecided
-
+| Branch      of cond: llvm * iftrue: string * iffalse: string
+| Jump        of label: string
+(** the name must be in current jump area. **)
 
 and binary_operator =
 | Add
@@ -78,26 +79,22 @@ and binary_operator =
 | And
 | Or
 | XOr
-| PendingBinOp of binary_operator undecided
-
-and comparator =
+// comparator
 | Eq
 | Gt
 | Ge
 | Lt
 | Le
 | Ne
-| PendingCmp of comparator undecided
+| PendingBinOp of binary_operator undecided
 
-and binary_operation =
-| Comp       of comparator * llvm * llvm
-| Normal     of binary_operator * llvm * llvm
-| PendingBin of binary_operation undecided
+
+and binary_operation = binary_operator * llvm * llvm
 
 and conversion =
 // where type must be one concrete type of integter or floating
 | ZeroExt     of src: llvm * dest: ``type``    // zext; Ext means extending
-| TypeCast    of src: llvm * dest: ``type``
+| CompatCast  of src: llvm * dest: ``type``
 | Bitcast     of src: llvm * dest: ``type``
 | PendingConv of conversion undecided
 
