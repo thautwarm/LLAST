@@ -51,7 +51,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
     let rec emit' (ctx: context): (llvm -> symbol)  =
         let assign_tmp (ctx: context) codestr =
             let name = ctx.alloc_name
-            name, Ordered <| fmt "%s = %s" name codestr
+            name, Ordered <| fmt "%%%s = %s" name codestr
     
         function
         | PendingLLVM _ -> failwith "Undecided llvm ast."
@@ -212,8 +212,8 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             Predef <| Ordered defty |> combine
             void_symbol
         | Bin(bin_op, lhs, rhs) as bin ->
-            let {ty=lty; name = lname} = emit' ctx lhs
-            let {ty=rty; name = rname} = emit' ctx rhs
+            let {ty=lty; name = lname; is_glob=l_is_glob} = emit' ctx lhs
+            let {ty=rty; name = rname; is_glob=r_is_glob} = emit' ctx rhs
             
             let ty =
                 if lty <> rty then
@@ -258,10 +258,8 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                         | inst, ty -> inst, Vec(n, ty)
                     | _ -> failwithf "invalid binary operation %A." bin
                 get_inst_and_ret_ty(bin_op, lty)
-            lname |>>
-            fun lname ->
-            rname |>>
-            fun rname ->
+            let lname = actual_name lname l_is_glob 
+            let rname = actual_name rname r_is_glob
             let codestr    = fmt "%s %s %s, %s" inst <| dump_type ty <| lname <| rname
             let name, proc' = assign_tmp ctx codestr
             combine proc'
