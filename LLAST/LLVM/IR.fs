@@ -28,7 +28,32 @@ type llvm =
 (** binary operations including comparisons *)
 | App         of llvm * llvm list
 (** application *)
-| Acc         of accessing
+
+| Get         of name: string
+(** get local var *)
+| Let         of name: string * value: llvm * body: llvm
+(** bind local var which create new context*)
+| Defun       of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
+(** define function **)
+| Const       of constant
+(** constant data *)
+
+(** conversions: trunc, fptrunc, ..., bitcast *)
+| DefTy       of name: string * ``type`` list
+
+(** control flow*)
+| Switch      of cond: llvm * cases: (llvm * string) list * default': string
+| IndrBr      of cond: llvm * labels: string list
+| Return      of llvm
+| Mark        of name: string (** make label*)
+| Branch      of cond: llvm * iftrue: string * iffalse: string
+| Jump        of label: string
+
+(** conversion*)
+| ZeroExt     of src: llvm * dest: ``type``    // zext; Ext means extending
+| CompatCast  of src: llvm * dest: ``type``
+| Bitcast     of src: llvm * dest: ``type``
+
 (** data accessing and manipulations *)
 (**
 including: load, store, alloca, getelementptr
@@ -39,32 +64,23 @@ including: load, store, alloca, getelementptr
             extractelement
             insertelement
 *)
-| Get         of name: string
-(** get local var *)
-| Let         of name: string * value: llvm * body: llvm
-(** bind local var which create new context*)
-| Defun       of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
-(** define function **)
-| Const       of constant
-(** constant data *)
-| Conv        of conversion
-(** conversions: trunc, fptrunc, ..., bitcast *)
-| DefTy       of name: string * ``type`` list
-| Cont        of control_flow
+| Alloca      of ``type`` * data: llvm option
+| Load        of name: string
+| Store       of name: string * data: llvm
+| GEP         of name: string * idx : llvm * offsets: int list
+| ExtractElem of subject: llvm * val': llvm * idx: int
+| InsertElem  of subject: llvm * val': llvm * idx: int
+| ExtractVal  of subject: llvm * val': llvm * idx: int
+| InsertVal   of subject: llvm * val': llvm * idx: int
+
+(** others *)
 | Suite       of llvm list
 | PendingLLVM of llvm undecided
-
-and control_flow = 
 (**
 switch, indirectbr, return are all terminators and returns Wildcard.
 
     *)
-| Switch      of cond: llvm * cases: (llvm * string) list * default': string
-| IndrBr      of cond: llvm * labels: string list
-| Return      of llvm
-| Mark        of name: string (** make label*)
-| Branch      of cond: llvm * iftrue: string * iffalse: string
-| Jump        of label: string
+
 (** the name must be in current jump area. **)
 
 and binary_operator =
@@ -91,23 +107,6 @@ and binary_operator =
 
 and binary_operation = binary_operator * llvm * llvm
 
-and conversion =
-// where type must be one concrete type of integter or floating
-| ZeroExt     of src: llvm * dest: ``type``    // zext; Ext means extending
-| CompatCast  of src: llvm * dest: ``type``
-| Bitcast     of src: llvm * dest: ``type``
-| PendingConv of conversion undecided
-
-and accessing =
-| Alloca      of ``type`` * data: llvm option
-| Load        of name: string
-| Store       of name: string * data: llvm
-| GEP         of name: string * idx : llvm * offsets: int list
-| ExtractElem of subject: llvm * val': llvm * idx: int
-| InsertElem  of subject: llvm * val': llvm * idx: int
-| ExtractVal  of subject: llvm * val': llvm * idx: int
-| InsertVal   of subject: llvm * val': llvm * idx: int
-| PendingAcc  of accessing undecided
 
 and constant =
 | ID    of bit: int * value: int64

@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.27428.2002
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "LLL", "LLL\LLL.fsproj", "{B78EAC77-7677-42CC-88FD-4453BFFE2EA1}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "LLAST", "LLAST\LLAST.fsproj", "{82A2597B-A47C-4084-AB1C-6D04A94C9CE8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,10 +11,10 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{B78EAC77-7677-42CC-88FD-4453BFFE2EA1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B78EAC77-7677-42CC-88FD-4453BFFE2EA1}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B78EAC77-7677-42CC-88FD-4453BFFE2EA1}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B78EAC77-7677-42CC-88FD-4453BFFE2EA1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{82A2597B-A47C-4084-AB1C-6D04A94C9CE8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{82A2597B-A47C-4084-AB1C-6D04A94C9CE8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{82A2597B-A47C-4084-AB1C-6D04A94C9CE8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{82A2597B-A47C-4084-AB1C-6D04A94C9CE8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
