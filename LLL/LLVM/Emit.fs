@@ -1,5 +1,5 @@
-module LLL.LLVM.MLEmit
-open LLL.LLVM.ML
+module LLL.LLVM.Emit
+open LLL.LLVM.IR
 open LLL.LLVM.Helper
 open System
 

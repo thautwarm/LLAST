@@ -1,5 +1,5 @@
 module LLL.LLVM.Helper
-open LLL.LLVM.ML
+open LLL.LLVM.IR
 
 let (|>>) (a : 'a option) (f: 'a -> 'b) : 'b =
     match a with

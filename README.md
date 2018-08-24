@@ -1,10 +1,8 @@
 # LLL
 low level lisp
 
-- `let` is replaced by immediate invocation of inline lambda.
+However now it becomes totally a LLVM binding for F#.
 
 
-# TODO
 
-- Compatible name mangling
-- Lisp front-end
+
