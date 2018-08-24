@@ -105,8 +105,11 @@ let rec emit (types: type_table) (proc: ref<proc>) =
 
         | Let(name, value, body) ->
             let value = emit' ctx value
+            let count = ctx.count
+            ctx.count <- ctx.count + 1
+            let ctx = ctx.into (fmt "%s$%d" name count)
             ctx.local.[name] <- value
-            emit' <| ctx.into name <| body
+            emit' ctx body
 
         | Defun(name, args, ret_ty, body) ->
             let ctx = ctx.into name
@@ -186,7 +189,10 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             fmt "%s:" name |> Ordered |> NoIndent |> combine
             terminator
         | Branch(cond, iffalse, iftrue) ->
-            let cond = emit' ctx cond |> dump_sym
+            let cond = emit' ctx cond
+            if cond.ty =||= I 1 |> not then failwith "Condition on instruction branch must be i1."
+            else 
+            let cond = dump_sym cond
             let codestr = fmt "br %s, label %%%s, label %%%s" cond iftrue iffalse
             combine <| Ordered codestr
             terminator
