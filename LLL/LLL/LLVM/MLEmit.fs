@@ -6,10 +6,11 @@ open System
 type 'v arraylist = System.Collections.Generic.List<'v>
 
 type proc =
-    | Ordered  of string
-    | Predef   of proc
-    | Combine  of proc * proc
-    | NoIndent of proc
+    | Ordered   of string
+    | Predef    of proc
+    | Combine   of proc * proc
+    | Pending   of (unit -> proc) 
+    | NoIndent  of proc
     | Indent    of proc
     | Empty
 
@@ -19,6 +20,7 @@ type proc with
         let rec to_ir (n: int) (ordered: string list) (predef: string list) = 
             function
             | Ordered it -> ((String.replicate n " ") + it) :: ordered, predef
+            | Pending it -> to_ir n ordered predef <| it()
             | Predef  it -> 
                 let ordered', predef' = to_ir n [] [] it
                 let predef = 
@@ -61,7 +63,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             combine proc'
             {ty = ty; ty_tb=types; name=Some name; is_glob=false}
         | Get name ->
-            ctx.find <| ctx.wrap_name name
+            ctx.find <| name
 
         | Let(name, value, body) ->
             let value = emit' ctx value
@@ -73,48 +75,50 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let arg_names, arg_tys = List.unzip args
             let func_ty = Func(arg_tys, ret_ty)
             ctx.``global``.[name] <- {ty=func_ty; name=Some name; ty_tb = types; is_glob=true}
-            let arg_syms =
-                List.map
-                <| fun (arg, ty) -> {ty = ty; name=Some <| ctx.wrap_name arg; ty_tb = types; is_glob=false}
-                <| args
+            let delay = fun () -> 
+                let arg_syms =
+                    List.map
+                    <| fun (arg, ty) -> {ty = ty; name=Some <| ctx.wrap_name arg; ty_tb = types; is_glob=false}
+                    <| args
 
-            let rec update_map = function
-                | [] -> ()
-                | (arg_name, arg_sym) :: tail -> 
-                ctx.bind arg_name arg_sym
-                update_map tail
-            in update_map <| List.zip arg_names arg_syms
-            let arg_string = List.map dump_sym arg_syms |> join
+                let rec update_map = function
+                    | [] -> ()
+                    | (arg_name, arg_sym) :: tail -> 
+                    ctx.bind arg_name arg_sym
+                    update_map tail
+                in update_map <| List.zip arg_names arg_syms
+                let arg_string = List.map dump_sym arg_syms |> join
         
-            let head =
-                fmt "define %s %s(%s){"
-                <| dump_type ret_ty
-                <| name
-                <| arg_string
-                |> Ordered
+                let head =
+                    fmt "define %s @%s(%s){"
+                    <| dump_type ret_ty
+                    <| name
+                    <| arg_string
+                    |> Ordered
        
-            let inner_proc = ref Empty
-            let body =
-                emit 
-                <| types
-                <| inner_proc
-                <| ctx
-                <| body
+                let inner_proc = ref Empty
+                let body =
+                    emit 
+                    <| types
+                    <| inner_proc
+                    <| ctx
+                    <| body
 
-            match body with 
-            | {ty=Terminator} -> ()
-            | _ as sym        ->
-                let ret_stmt = fmt "ret %s" <| dump_sym sym
-                if sym.ty <> ret_ty then 
-                    failwithf "function return type %A conflicts with end of body %A" ret_ty sym.ty
-                else
-                inner_proc.contents <- Combine(inner_proc.contents, Ordered ret_stmt)
+                match body with 
+                | {ty=Terminator} -> ()
+                | _ as sym        ->
+                    let ret_stmt = fmt "ret %s" <| dump_sym sym
+                    if sym.ty <> ret_ty then 
+                        failwithf "function return type %A conflicts with end of body %A" ret_ty sym.ty
+                    else
+                    inner_proc.contents <- Combine(inner_proc.contents, Ordered ret_stmt)
             
-            let endl = fmt "}" |> Ordered
-            let defun = Indent(inner_proc.Value)
-            let defun = Combine(defun, endl)
-            let defun = Combine(head, defun)
-            combine <| Predef defun
+                let endl = fmt "}" |> Ordered
+                let defun = Indent(inner_proc.Value)
+                let defun = Combine(defun, endl)
+                let defun = Combine(head, defun)
+                NoIndent <| Predef defun
+            combine <| Pending delay
             void_symbol
 
         | Conv conversion ->
@@ -278,9 +282,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 then failwith "function input types mismatch."
                 else
                 let arg_string = 
-                    List.map
-                    <| fun {ty=ty; name=name} -> name |>> fun name -> fmt "%s %s" <| dump_type ty <| name
-                    <| args
+                    List.map dump_sym args
                     |> String.concat ", "
                 
                 match fn_ret_ty with

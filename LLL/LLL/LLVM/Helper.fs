@@ -62,7 +62,6 @@ type context with
         concat ctx.prefix name
     
     member ctx.bind name sym =
-        let name    = ctx.wrap_name name
         let local   = ctx.local
         local.[name] <- sym
 
@@ -197,35 +196,41 @@ let inline insertval' agg' elt' offsets =
         <| dump_sym agg'
         <| dump_sym elt'
         <| join (List.map to_str offsets)
-
+   
+let private type_data' ty str = 
+    ty, fmt "%s %s" <| dump_type ty <| str
 let rec typed_data: constant -> (``type`` * string) = function
     | PendingConst _ -> failwith "Data not decided yet."
-    | ID(bit, value) -> I bit, fmt "%d" value
-    | FD(bit, value) -> F bit, fmt "%f" value
+    | ID(bit, value) -> type_data' <| I bit <| fmt "%d" value
+    | FD(bit, value) -> type_data' <| F bit <| fmt "%f" value
     | ArrD lst       ->
         let typed_lst, data_lst = List.unzip <| List.map typed_data lst
         let length = List.length data_lst
         match List.distinct typed_lst with
         | [ty] ->
-            Arr(length, ty),
-            fmt "[ %s ]" <| join data_lst
+            type_data' 
+            <| Arr(length, ty)
+            <| (fmt "[ %s ]" <| join data_lst)
         | _    -> failwith "element types mismatch"
+
     | VecD lst ->
         let typed_lst, data_lst = List.unzip <| List.map typed_data lst
         let length = List.length data_lst
         match List.distinct typed_lst with
         | [ty] ->
-            Vec(length, ty),
-            fmt "< %s >" <| join data_lst
+            type_data' 
+            <| Vec(length, ty)
+            <| (fmt "< %s >" <| join data_lst)
         | _    -> failwith "element types mismatch"
     | AggD lst ->
         let type_lst, data_lst = List.unzip <| List.map typed_data lst
         let length = List.length data_lst
         let agg_ty = Agg(type_lst)
-        agg_ty,
-        fmt "{ %s }" <| join data_lst
+        type_data' 
+        <| agg_ty
+        <| (fmt "{ %s }" <| join data_lst)
     | Undef ty ->
-        ty, "undef"
+        type_data' ty "undef"
 
 
 
