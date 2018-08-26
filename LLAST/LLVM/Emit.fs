@@ -178,8 +178,8 @@ let rec emit (types: type_table) (proc: ref<proc>) =
         | IndrBr(cond, labels) ->
             let cond = emit' ctx cond |> dump_sym
             let label_string =
-                List.map 
-                <| fun label -> fmt "label %s" label 
+                List.map
+                <| fun label -> fmt "label %s" label
                 <| labels
                 |> join
             let codestr = fmt "indirectbr %s, [ %s ]" cond label_string
@@ -191,7 +191,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
         | Branch(cond, iffalse, iftrue) ->
             let cond = emit' ctx cond
             if cond.ty =||= I 1 |> not then failwith "Condition on instruction branch must be i1."
-            else 
+            else
             let cond = dump_sym cond
             let codestr = fmt "br %s, label %%%s, label %%%s" cond iftrue iffalse
             combine <| Ordered codestr
@@ -201,12 +201,12 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             terminator
         | Switch(cond, cases, default') ->
             let cond = emit' ctx cond |> dump_sym
-            let label_pairs = 
-                List.map 
+            let label_pairs =
+                List.map
                 <| fun (case, label) ->
                     let case = emit' ctx case |> dump_sym
                     fmt "%s, label %%%s" case label
-                <| cases 
+                <| cases
                 |> join
             fmt "switch %s, %%%s [ %s ]" cond default' label_pairs |> Ordered |> combine
             terminator
