@@ -9,21 +9,21 @@ type proc =
     | Ordered   of string
     | Predef    of proc
     | Combine   of proc * proc
-    | Pending   of (unit -> proc) 
+    | Pending   of (unit -> proc)
     | NoIndent  of proc
     | Indent    of proc
     | Empty
 
 type proc with
-    member this.to_ir = 
+    member this.to_ir =
         let dump_code_lst = List.rev >> (String.concat "\n")
-        let rec to_ir (n: int) (ordered: string list) (predef: string list) = 
+        let rec to_ir (n: int) (ordered: string list) (predef: string list) =
             function
             | Ordered it -> ((String.replicate n " ") + it) :: ordered, predef
             | Pending it -> to_ir n ordered predef <| it()
-            | Predef  it -> 
+            | Predef  it ->
                 let ordered', predef' = to_ir n [] [] it
-                let predef = 
+                let predef =
                     if List.isEmpty predef' then predef
                     else List.append predef predef'
                 ordered, List.append ordered' predef
@@ -37,9 +37,9 @@ type proc with
             | Empty      ->
                 ordered, predef
         let ordered, predef = to_ir 0 [] [] this
-        fmt "%s\n%s" 
+        fmt "%s\n%s"
         <| dump_code_lst predef
-        <| dump_code_lst ordered 
+        <| dump_code_lst ordered
 
 
 
@@ -257,12 +257,12 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     | Lt, F _ -> "fcmp olt", I 1
                     | Le, I _ -> "icmp sle", I 1
                     | Le, F _ -> "fcmp ole", I 1
-                    | op, Vec(n, ty) -> 
+                    | op, Vec(n, ty) ->
                         match get_inst_and_ret_ty(op, ty) with
                         | inst, ty -> inst, Vec(n, ty)
                     | _ -> failwithf "invalid binary operation %A." bin
                 get_inst_and_ret_ty(bin_op, lty)
-            let lname = actual_name lname l_is_glob 
+            let lname = actual_name lname l_is_glob
             let rname = actual_name rname r_is_glob
             let codestr    = fmt "%s %s %s, %s" inst <| dump_type ty <| lname <| rname
             let name, proc' = assign_tmp ctx codestr
@@ -277,10 +277,10 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let args = List.map emit'' args
             match fn_ty with
             | Func(fn_arg_tys, fn_ret_ty) ->
-                if fn_arg_tys <> [for each in args -> each.ty] 
+                if fn_arg_tys <> [for each in args -> each.ty]
                 then failwith "function input types mismatch."
                 else
-                let arg_string = 
+                let arg_string =
                     List.map dump_sym args
                     |> String.concat ", "
                 match fn_ret_ty with
