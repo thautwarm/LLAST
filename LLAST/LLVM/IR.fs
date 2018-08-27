@@ -51,6 +51,8 @@ type llvm =
 (** define function **)
 | Defun       of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
 
+| Decl        of name: string * arg_tys: ``type`` list * ret_ty: ``type``
+
 | Const       of constant
 
 | DefTy       of name: string * ``type`` list

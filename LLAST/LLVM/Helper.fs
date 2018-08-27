@@ -124,7 +124,7 @@ let inline get_align (ty_tb: type_table) ty : int =
     | 0         -> 1
     | otherwise -> otherwise
 
-let inline get_size_and_align(ty_tb: type_table) ty : int64 * int =
+let inline get_size_and_align(ty_tb: type_table) ty : int64 * int64 =
     let rec get_size (recur_set: string Set) = 
         function
         | PendingTy id -> NotDecidedYet id |> ll_raise
@@ -144,7 +144,10 @@ let inline get_size_and_align(ty_tb: type_table) ty : int64 * int =
     in
     let align = get_align ty_tb ty
     let total = get_size (set[]) <| ty |> decimal 
-    in  System.Math.Ceiling(total / decimal align) |> System.Convert.ToInt64, align
+    in  
+    let chunk_num = System.Math.Ceiling(total / decimal align) |> System.Convert.ToInt64
+    let align = System.Convert.ToInt64 align
+    chunk_num * align, align
 
 let inline actual_name name is_glob =
     name |>> fun name -> name |> if is_glob then fmt "@%s" else fmt "%%%s"
@@ -210,19 +213,22 @@ let inline insertval' agg' elt' offsets =
         <| dump_sym agg'
         <| dump_sym elt'
         <| join (List.map (fmt "%d") offsets)
+    
+let private (%%) ty str =
+    ty, fmt "%s %s" <| dump_type ty <| str
 
-let rec typed_data: constant -> (``type`` * string) = function
+let rec typed_data: constant -> (``type`` * string) = 
+    function
     | PendingConst id -> NotDecidedYet(id) |> ll_raise
-    | ID(bit, value)  -> I bit, fmt "%d" value
-    | FD(bit, value)  -> F bit, fmt "%f" value
+    | ID(bit, value)  -> I bit %% fmt "%d" value
+    | FD(bit, value)  -> F bit %% fmt "%f" value
     | ArrD lst        ->
         let typed_lst, data_lst = List.unzip <| List.map typed_data lst
         let length = List.length data_lst
         match List.distinct typed_lst with
         | []   -> failwith "Impossible"
         | [ty] ->
-            Arr(length, ty),
-            (fmt "[ %s ]" <| join data_lst)
+            Arr(length, ty) %% (fmt "[ %s ]" <| join data_lst)
         | a :: b :: _ -> type_mimatch(a, b) |> ll_raise
 
     | VecD lst ->
@@ -231,17 +237,16 @@ let rec typed_data: constant -> (``type`` * string) = function
         match List.distinct typed_lst with
         | []   -> failwith "Impossible"
         | [ty] ->
-            Vec(length, ty),
-            (fmt "< %s >" <| join data_lst)
+            Vec(length, ty) %% (fmt "< %s >" <| join data_lst)
         | a :: b :: _ -> type_mimatch(a, b) |> ll_raise
 
     | AggD lst ->
         let type_lst, data_lst = List.unzip <| List.map typed_data lst
         let agg_ty = Agg(type_lst)
-        agg_ty,
-        fmt "{ %s }" <| join data_lst
+        agg_ty %% (fmt "{ %s }" <| join data_lst)
     | Undef ty ->
-        ty, "undef"
+        ty %% "undef"
+
 
 let rec find_ty (types: type_table) offsets agg_ty =
     let rec find_ty offsets agg_ty =
@@ -276,6 +281,6 @@ let get_constant (types: type_table) (ctx: context) (constant: constant) =
     let sym = {ty=Ptr ty; name = Some name; is_glob = true; ty_tb = types}
     ctx.consts.[constant] <- sym
     sym,
-    fmt "@%s = private unnamed_addr constant %s %s, align %d" name <| dump_type ty <| code_str <| get_align types ty |> Ordered |> Predef
+    fmt "@%s = private unnamed_addr constant %s, align %d" name <| code_str <| get_align types ty |> Ordered |> Predef
         
 let inline (=||=) a b = type_eq(a, b)

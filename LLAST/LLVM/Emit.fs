@@ -90,6 +90,12 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                
                load_llvm constant 
             | _  ->
+               try 
+                  Decl("llvm.memcpy.p0i8.p0i8.i64", [Ptr <| I 8; Ptr <| I 8; I 64; I 32; I 1], Void)
+                  |> emit' ctx
+                  |> ignore
+               with LLException(UnexpectedUsage(_, _, "declaration")) ->
+                  ()
                let size, align = get_size_and_align types ty
                let ret = emit' ctx <| Alloca(ty, None)
                let bitcasted = convert_routine "bitcast" ret <| Ptr(I 8)
@@ -111,6 +117,21 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let ctx = ctx.into (fmt "%s$%d" name count)
             ctx.local.[name] <- value
             emit' ctx body
+        | Decl(name, arg_tys, ret_ty) ->
+            if ctx.``global``.ContainsKey name then 
+                UnexpectedUsage(fmt "declare %s" name, "declared once", "declaration") |> ll_raise
+            else
+            let func_ty = Func(arg_tys, ret_ty)
+            let name' = Some name
+            ctx.``global``.[name] <- {ty = func_ty; name = name'; ty_tb = types; is_glob = true}
+            fmt "declare %s %s(%s)" 
+                <| dump_type ret_ty 
+                <| actual_name name' true 
+                <| join (List.map dump_type arg_tys)
+                |> Ordered 
+                |> Predef 
+                |> combine
+            void_symbol
 
         | Defun(name, args, ret_ty, body) ->
             let ctx = ctx.into name
@@ -388,6 +409,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let name, proc' = insertval' subject val' indices |> assign_tmp ctx
             combine proc'
             {ty = ty; name = Some name; ty_tb = types; is_glob=false}
+
         | Locate(loc, llvm) ->
             try
                 emit' ctx llvm
