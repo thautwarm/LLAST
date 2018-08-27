@@ -32,6 +32,7 @@ type context with
         {
             ``global`` = hashtable()
             local      = hashtable()
+            consts     = hashtable()
             count      = 0
             prefix     = ""
         }
@@ -99,6 +100,8 @@ let type_substitute (sub_map: (string, string) hashtable) ty =
 
     in sub ty
 
+
+
 let inline get_align (ty_tb: type_table) ty : int =
     let rec get_align (recur_set: string Set) =
         function
@@ -109,7 +112,7 @@ let inline get_align (ty_tb: type_table) ty : int =
         | I bit  -> bit/8
         | Ptr _  -> 8
         | Arr(_, ty)
-        | Vec(_, ty)  -> 8 + get_align recur_set ty
+        | Vec(_, ty)  -> get_align recur_set ty
         | Agg(ty_lst) -> List.max <| List.map (get_align recur_set) ty_lst
         | Alias name when not <| Set.contains name recur_set ->
             let ty = ty_tb.[name]
@@ -120,6 +123,28 @@ let inline get_align (ty_tb: type_table) ty : int =
     match get_align <| set [] <| ty with
     | 0         -> 1
     | otherwise -> otherwise
+
+let inline get_size_and_align(ty_tb: type_table) ty : int64 * int =
+    let rec get_size (recur_set: string Set) = 
+        function
+        | PendingTy id -> NotDecidedYet id |> ll_raise
+        | Void         -> InvalidUsage("type void", "sizeof") |> ll_raise
+        | Func _       -> InvalidUsage("type function", "sizeof") |> ll_raise
+        | I bit
+        | F bit        -> bit/8
+        | Ptr _        -> 8
+        | Arr(n, ty)
+        | Vec(n, ty)   -> get_size recur_set ty |> (*) n
+        | Agg(ty_lst)  -> List.sum <| List.map (get_size recur_set) ty_lst
+        | Alias name when not <| Set.contains name recur_set ->
+            let ty = ty_tb.[name]
+            get_size <| Set.add name recur_set <| ty
+        | Alias name     -> InvalidUsage(fmt "value type of %s" name, "recursive type") |> ll_raise
+        | _  as it    -> InvalidUsage(dump_type it, "get_align") |> ll_raise
+    in
+    let align = get_align ty_tb ty
+    let total = get_size (set[]) <| ty |> decimal 
+    in  System.Math.Ceiling(total / decimal align) |> System.Convert.ToInt64, align
 
 let inline actual_name name is_glob =
     name |>> fun name -> name |> if is_glob then fmt "@%s" else fmt "%%%s"
@@ -147,18 +172,21 @@ let inline alloca' ptr' data' =
     | Some data' ->
     fmt "%s = alloca %s, %s ,align %d" <| actual_name ptr'.name false <| dump_type alloca_ty <| dump_sym data' <| align
 
-let inline load' {ty=ty; name=ptr_name} =
-    ptr_name |>>
-    fun ptr_name ->
-    let ty = dump_type ty
-    fmt "load %s, %s* %s" ty ty ptr_name
+let inline load' sym =
+    match sym.ty with
+    | Ptr ty ->
+        let ty = dump_type ty
+        fmt "load %s, %s* %s" ty ty <| actual_name sym.name sym.is_glob
+    | _      -> UnexpectedUsage(dump_type sym.ty, "Pointer type", "`load`") |> ll_raise
 
 let inline gep' ptr' idx offsets =
     match ptr'.ty with
     | Ptr val_ty ->
     let val_ty = dump_type val_ty
-    fmt "getelementptr inbounds %s, %s, %s, %s"
-        val_ty <| dump_sym ptr' <| idx <| join (List.map (fmt "%d") offsets)
+    if List.isEmpty offsets then 
+        fmt "getelementptr inbounds %s, %s, %s" <| val_ty <| dump_sym ptr' <| idx
+    else fmt "getelementptr inbounds %s, %s, %s, %s"
+              val_ty <| dump_sym ptr' <| idx <| join (List.map (fmt "i32 %d") offsets)
     | _ as ty -> UnexpectedUsage(dump_type ty, "Pointer type", "`getlementptr`") |> ll_raise
 
 let inline extractelem' vec' idx': string =
@@ -183,21 +211,18 @@ let inline insertval' agg' elt' offsets =
         <| dump_sym elt'
         <| join (List.map (fmt "%d") offsets)
 
-let private type_data' ty str =
-    ty, fmt "%s %s" <| dump_type ty <| str
 let rec typed_data: constant -> (``type`` * string) = function
     | PendingConst id -> NotDecidedYet(id) |> ll_raise
-    | ID(bit, value)  -> type_data' <| I bit <| fmt "%d" value
-    | FD(bit, value)  -> type_data' <| F bit <| fmt "%f" value
+    | ID(bit, value)  -> I bit, fmt "%d" value
+    | FD(bit, value)  -> F bit, fmt "%f" value
     | ArrD lst        ->
         let typed_lst, data_lst = List.unzip <| List.map typed_data lst
         let length = List.length data_lst
         match List.distinct typed_lst with
         | []   -> failwith "Impossible"
         | [ty] ->
-            type_data'
-            <| Arr(length, ty)
-            <| (fmt "[ %s ]" <| join data_lst)
+            Arr(length, ty),
+            (fmt "[ %s ]" <| join data_lst)
         | a :: b :: _ -> type_mimatch(a, b) |> ll_raise
 
     | VecD lst ->
@@ -206,19 +231,17 @@ let rec typed_data: constant -> (``type`` * string) = function
         match List.distinct typed_lst with
         | []   -> failwith "Impossible"
         | [ty] ->
-            type_data'
-            <| Vec(length, ty)
-            <| (fmt "< %s >" <| join data_lst)
+            Vec(length, ty),
+            (fmt "< %s >" <| join data_lst)
         | a :: b :: _ -> type_mimatch(a, b) |> ll_raise
 
     | AggD lst ->
         let type_lst, data_lst = List.unzip <| List.map typed_data lst
         let agg_ty = Agg(type_lst)
-        type_data'
-        <| agg_ty
-        <| (fmt "{ %s }" <| join data_lst)
+        agg_ty,
+        fmt "{ %s }" <| join data_lst
     | Undef ty ->
-        type_data' ty "undef"
+        ty, "undef"
 
 let rec find_ty (types: type_table) offsets agg_ty =
     let rec find_ty offsets agg_ty =
@@ -243,4 +266,16 @@ let type_eq =
     | Alias name1, Alias name2 -> name1 = name2
     | a, b -> a = b
 
+let get_constant (types: type_table) (ctx: context) (constant: constant) = 
+    let ref = ref <| void_symbol
+    match ctx.consts.TryGetValue(constant, ref) with
+    | true  -> ref.Value, Empty
+    | false ->
+    let ty, code_str = typed_data(constant)
+    let name = fmt ".const.%d" ctx.consts.Count
+    let sym = {ty=Ptr ty; name = Some name; is_glob = true; ty_tb = types}
+    ctx.consts.[constant] <- sym
+    sym,
+    fmt "@%s = private unnamed_addr constant %s %s, align %d" name <| dump_type ty <| code_str <| get_align types ty |> Ordered |> Predef
+        
 let inline (=||=) a b = type_eq(a, b)

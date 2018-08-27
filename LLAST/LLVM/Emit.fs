@@ -6,52 +6,12 @@ open LLVM.Exc
 
 type 'v arraylist = System.Collections.Generic.List<'v>
 
-type proc =
-    | Ordered   of string
-    | Predef    of proc
-    | Combine   of proc * proc
-    | Pending   of (unit -> proc)
-    | NoIndent  of proc
-    | Indent    of proc
-    | Empty
-
-type proc with
-    member this.to_ir =
-        let dump_code_lst = List.rev >> (String.concat "\n")
-        let rec to_ir (n: int) (ordered: string list) (predef: string list) =
-            function
-            | Ordered it -> ((String.replicate n " ") + it) :: ordered, predef
-            | Pending it -> to_ir n ordered predef <| it()
-            | Predef  it ->
-                let ordered', predef' = to_ir n [] [] it
-                let predef =
-                    if List.isEmpty predef' then predef
-                    else List.append predef predef'
-                ordered, List.append ordered' predef
-            | Combine(l, r) ->
-                let ordered, predef = to_ir n ordered predef l
-                to_ir n ordered predef r
-            | NoIndent p ->
-                to_ir 0 ordered predef p
-            | Indent   p ->
-                to_ir <| n + 1 <| ordered <| predef <| p
-            | Empty      ->
-                ordered, predef
-        let ordered, predef = to_ir 0 [] [] this
-        fmt "%s\n%s"
-        <| dump_code_lst predef
-        <| dump_code_lst ordered
-
-
-
-let pack a b = a, b
-
-
 let rec emit (types: type_table) (proc: ref<proc>) =
     let combine b =
         proc.contents <- Combine(proc.contents, b)
 
     let rec emit' (ctx: context): (llvm -> symbol)  =
+
         let assign_tmp (ctx: context) codestr =
             let name = ctx.alloc_name
             name, Ordered <| fmt "%%%s = %s" name codestr
@@ -94,13 +54,53 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             else
             convert_routine inst sym dest
 
+        let load_llvm ptr = 
+            match ptr with
+            | {ty = Ptr val_ty} ->
+                let name, proc' = load' ptr |> assign_tmp ctx
+                combine proc'
+                {name=Some name; ty_tb=types; is_glob=false; ty=val_ty}
+            | _ ->
+            UnexpectedUsage("Pointer type", dump_type ptr.ty, "`load` type") |> ll_raise
+        
+        let store_llvm (ptr) ({ty = ty_of_data} as data) = 
+            match ptr with
+            | {ty=Ptr val_ty} ->
+                if val_ty <> ty_of_data then
+                    UnexpectedUsage(dump_type val_ty, dump_type ty_of_data, "`store` arg type") |> ll_raise
+                else
+                Ordered <| store' data ptr |> combine
+                void_symbol
+            | {ty=ty} -> UnexpectedUsage("Pointer type", dump_type ty, "`store` arg type") |> ll_raise
+
         function
         | PendingLLVM _ as id -> NotDecidedYet(id) |> ll_raise
         | Const constant ->
-            let ty, codestr = typed_data constant
-            let name, proc' = assign_tmp ctx codestr
-            combine proc'
-            {ty = ty; ty_tb=types; name=Some name; is_glob=false}
+            let constant, proc' = get_constant types ctx constant
+            
+            match proc' with
+            | Empty -> 
+                ()
+            | _     ->
+                combine proc'
+            let ty = match constant.ty with Ptr ty -> ty | _ -> failwith "Impossible"
+            match ty with 
+            | I _
+            | F _ -> 
+               
+               load_llvm constant 
+            | _  ->
+               let size, align = get_size_and_align types ty
+               let ret = emit' ctx <| Alloca(ty, None)
+               let bitcasted = convert_routine "bitcast" ret <| Ptr(I 8)
+               let codestr = 
+                   fmt "call void @llvm.memcpy.p0i8.p0i8.i64(%s, i8* bitcast(%s to i8*), i64 %d, i32 %d, i1 false)"
+                        <| dump_sym bitcasted
+                        <| dump_sym constant
+                        <| size
+                        <| align
+               combine <| Ordered codestr
+               load_llvm ret
         | Get name ->
             ctx.find <| name
 
@@ -213,7 +213,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
         | DefTy(name, ty_lst) ->
             let ty = Agg(ty_lst)
             types.[name] <- ty
-            let defty = fmt "type %%.struct.%s = %s" name <| dump_type ty
+            let defty = fmt "%%.struct.%s = type %s" name <| dump_type ty
             Predef <| Ordered defty |> combine
             void_symbol
         | Bin(bin_op, lhs, rhs) as bin ->
@@ -272,9 +272,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             {ty=ret_ty; name=Some name; is_glob=false; ty_tb=types}
         | App(func, args) ->
             let emit'' = emit' ctx
-            let {ty = fn_ty; name = fn_name} = emit'' func
-            fn_name |>>
-            fun fn_name ->
+            let {ty = fn_ty; name = fn_name; is_glob = is_glob} = emit'' func
 
             let args = List.map emit'' args
             match fn_ty with
@@ -291,12 +289,12 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     |> String.concat ", "
                 match fn_ret_ty with
                 | Void ->
-                    let codestr = fmt "call void %s(%s)" fn_name arg_string
+                    let codestr = fmt "call void %s(%s)" (actual_name fn_name is_glob) arg_string
                     combine <| Ordered codestr
                     void_symbol
 
                 | _    ->
-                let codestr = fmt "call %s %s(%s)" <| dump_type fn_ret_ty <| fn_name <| arg_string
+                let codestr = fmt "call %s %s(%s)" <| dump_type fn_ret_ty <| (actual_name fn_name is_glob) <| arg_string
                 let name, proc' = assign_tmp ctx codestr
                 combine proc'
                 {name=Some name; ty = fn_ret_ty; is_glob=false; ty_tb=types}
@@ -332,33 +330,21 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             combine <| Ordered codestr
             ptr
 
-        | Load name ->
-            let ptr = ctx.find name
-            match ptr with
-            | {ty = Ptr val_ty} ->
-                let name, proc' = load' ptr |> assign_tmp ctx
-                combine proc'
-                {name=Some name; ty_tb=types; is_glob=false; ty=val_ty}
-            | _ ->
-            UnexpectedUsage("Pointer type", dump_type ptr.ty, "`load` type") |> ll_raise
+        | Load subject ->
+            load_llvm <| emit' ctx subject
 
-        | Store(name, data) ->
-            let {ty = ty_of_data} as data = emit' ctx data
-            match ctx.find name with
-            | {ty=Ptr val_ty} as ptr ->
-                if val_ty <> ty_of_data then
-                    UnexpectedUsage(dump_type val_ty, dump_type ty_of_data, "`store` arg type") |> ll_raise
-                else
-                Ordered <| store' data ptr |> combine
-                void_symbol
-            | {ty=ty} -> UnexpectedUsage("Pointer type", dump_type ty, "`store` arg type") |> ll_raise
+        | Store(subject, data) ->
+            let data = emit' ctx data
+            let subject = emit' ctx subject
+            store_llvm subject data
 
-        | GEP(name, idx, offsets) ->
+        | GEP(subject, idx, offsets) ->
+            let subject = emit' ctx subject
             let idx = emit' ctx idx
-            match ctx.find name with
+            match subject with
             | {ty = Ptr ty} as ptr ->
                 let idx = dump_sym idx
-                let ret_ty = find_ty types offsets ty
+                let ret_ty = Ptr <| find_ty types offsets ty
                 let name, proc' = gep' ptr idx offsets  |> assign_tmp ctx
                 combine proc'
                 {name=Some name; ty = ret_ty; is_glob=false; ty_tb=types}

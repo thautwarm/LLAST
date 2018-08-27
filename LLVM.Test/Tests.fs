@@ -1,29 +1,32 @@
-﻿open LLVM.IR
+module Tests
+
+open System
+open Xunit
+open LLVM.IR
 open LLVM.Emit
 open LLVM.Infras
 open LLVM.Helper
 open LLVM.Exc
-open System.IO
 
-let codegen (title: string) (llvm: llvm): unit =
+let test (title: string) (ir: llvm) =
+    printf "============%s===============\n" title
     let ctx = context.init
     let proc = ref Empty
     let type_table = hashtable()
     let emit' = emit <| type_table <| proc
     try
-        emit' ctx <| llvm |> ignore
-        System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title,  proc.Value.to_ir)
+        emit' ctx <| ir |> ignore
+        printf "%s" proc.Value.to_ir
     with LLException(exc) ->
         printf "%A" exc
 
-[<EntryPoint>]
-let main args =
-
+[<Fact>]
+let ``My test`` () =
     let formal_args = [("arg1", I 32)]
     let ret_ty = I 32
     let body = Bin(Add, Get "arg1", Get "arg1")
     let defun = Defun("func", formal_args, ret_ty, body)
-    codegen "simple-defun" defun
+    test "simple defun" defun
 
 
     let formal_args = [("arg1", I 32)]
@@ -31,7 +34,7 @@ let main args =
     let body = CompatCast(Bin(Add, Get "arg1", Get "arg1"), F 32)
 
     let defun = Defun("func", formal_args, ret_ty, body)
-    codegen "test-type-convert" defun
+    test "test type convert" defun
 
     let formal_args = [("arg1", I 32)]
     let ret_ty = F 32
@@ -53,7 +56,7 @@ let main args =
     let def_test2 = Defun("test2", formal_args, ret_ty, body)
 
     let suite = Suite([def_test2; def_test1])
-    codegen "cross-definition" suite
+    test "cross definition" suite
 
     let formal_args = [("arg1", I 32)]
     let ret_ty = I 32
@@ -65,13 +68,16 @@ let main args =
 
     let iffalse = Suite([Mark "falselabel"; Store(Get "result", Const <| ID(32, 10L))])
 
-    let ifresult = Let("result", Alloca(I 32, None), Suite([branch; iftrue; iffalse; Load(Get "result")]))
+    let ifresult = Let("result", Alloca(I 32, None), Suite([iftrue; iffalse; Load(Get "result")]))
 
     let ret = Suite([Return ifresult; Mark "tag"; Const(ID(32, 15L)) |> Return])
 
     let whole = Defun("test3", formal_args, ret_ty,
-                      ret)
-    codegen "jump" whole
+                      Suite [
+                        branch
+                        ret
+                       ])
+    test "jump" whole
 
 
     let ty_def = DefTy("master", [I 1; I 8; F 32; Agg([I 32; I 64])])
@@ -87,6 +93,5 @@ let main args =
                       ),
                   [3; 1])
             )
-    codegen "member-accessing" <| Suite [ty_def; defun]
-
+    test "member accessing" <| Suite [ty_def; defun]
     0
