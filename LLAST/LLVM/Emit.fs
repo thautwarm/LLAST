@@ -211,7 +211,6 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             fmt "switch %s, %%%s [ %s ]" cond default' label_pairs |> Ordered |> combine
             terminator
         | DefTy(name, ty_lst) ->
-            let name = ctx.wrap_name name
             let ty = Agg(ty_lst)
             types.[name] <- ty
             let defty = fmt "type %%.struct.%s = %s" name <| dump_type ty
@@ -347,22 +346,44 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             match ctx.find name with
             | {ty = Ptr ty} as ptr ->
                 let idx = dump_sym idx
-                let ret_ty =
-                    let rec find_ty offsets agg_ty =
-                        match offsets with
-                        | [] -> agg_ty
-                        | offset :: offsets ->
-                        match agg_ty with
-                        | Agg(list) -> find_ty offsets list.[offset]
-                        | Vec(n, ty) -> if n < offset then find_ty offsets ty
-                                        else failwithf "IndexError."
-                        | Alias(name) ->
-                            find_ty offsets <| types.[name]
-                        | _ -> failwith "Type error."
-                    in find_ty offsets ty
+                let ret_ty = find_ty types offsets ty
                 let name, proc' = gep' ptr idx offsets  |> assign_tmp ctx
                 combine proc'
                 {name=Some name; ty = ret_ty; is_glob=false; ty_tb=types}
-            | _ -> failwith "Invalid instruction getelementptr."
-        | _ -> raise <| NotImplementedException()
+            | _ -> failwith "Invalid usage for instruction `getelementptr`."
+        | ExtractElem(subject, idx) ->
+            let subject = emit' ctx subject
+            let idx     = emit' ctx idx
+            match subject with
+            | {ty = Vec(_, ty)} ->
+                let name, proc' = extractelem' subject idx |> assign_tmp ctx
+                combine proc'
+                {ty=ty; name = Some name; ty_tb=types; is_glob = false}
+            | _ -> failwithf "Invalid usage for instruction `extractelement`."
+        | InsertElem(subject, val', idx) ->
+            let subject = emit' ctx subject
+            match subject with
+            | {ty = Vec(n, ty)} ->
+                let val'    = emit'  ctx idx
+                let idx     = emit' ctx idx
+                if val'.ty =||= ty |> not then
+                    failwithf "Invalid usage for instruction `insertelement`. Type mismatch: %A <> %A." ty val'.ty
+                let name, proc' = insertelem' subject val' idx |> assign_tmp ctx
+                combine proc'
+                {ty = ty; name = Some name; ty_tb = types; is_glob = false}
+            | _ as ty -> failwithf "Invalid usage for instruction `insertelement`. Expected type of first operand to be %A, got %A" subject.ty ty
+
+        | ExtractVal(subject, indices) ->
+            let subject = emit' ctx subject
+            let ty = find_ty types indices subject.ty
+            let name, proc' = extractval' subject indices |> assign_tmp ctx
+            combine proc'
+            {ty = ty; name = Some name; ty_tb = types; is_glob=false}
+        | InsertVal(subject, val', indices) ->
+            let subject = emit' ctx subject
+            let ty = find_ty types indices subject.ty
+            let val' = emit' ctx val'
+            let name, proc' = insertval' subject val' indices |> assign_tmp ctx
+            combine proc'
+            {ty = ty; name = Some name; ty_tb = types; is_glob=false}
     emit'

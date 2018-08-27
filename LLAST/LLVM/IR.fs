@@ -68,10 +68,10 @@ including: load, store, alloca, getelementptr
 | Load        of name: string
 | Store       of name: string * data: llvm
 | GEP         of name: string * idx : llvm * offsets: int list
-| ExtractElem of subject: llvm * val': llvm * idx: int
-| InsertElem  of subject: llvm * val': llvm * idx: int
-| ExtractVal  of subject: llvm * val': llvm * idx: int
-| InsertVal   of subject: llvm * val': llvm * idx: int
+| ExtractElem of subject: llvm * idx: llvm
+| InsertElem  of subject: llvm * val': llvm * idx: llvm
+| ExtractVal  of subject: llvm * indices: int list
+| InsertVal   of subject: llvm * val': llvm * indices: int list
 
 (** others *)
 | Suite       of llvm list

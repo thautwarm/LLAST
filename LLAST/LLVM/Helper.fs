@@ -26,7 +26,7 @@ and context = {
 let fmt               = sprintf
 let inline to_str arg = fmt "%s" arg
 let inline concat a b = a + "." + b
-let inline join lst   = String.concat " ," <| List.map to_str lst
+let inline join lst   = String.concat ", " <| List.map to_str lst
 
 let void_symbol = {
     name        = None
@@ -43,7 +43,7 @@ let terminator = {
 }
 
 type context with
-    static member init = 
+    static member init =
         {
             ``global`` = hashtable()
             local      = hashtable()
@@ -57,10 +57,10 @@ type context with
 
     member this.into name =
         {this with count = 0; prefix = concat this.prefix name; local = hashtable(this.local)}
-    
+
     member ctx.wrap_name name : string =
         concat ctx.prefix name
-    
+
     member ctx.bind name sym =
         let local   = ctx.local
         local.[name] <- sym
@@ -69,7 +69,7 @@ type context with
         let ref = ref void_symbol
         match ctx.local.TryGetValue(name, ref)with
         | true  -> ref.Value
-        | false -> 
+        | false ->
         match ctx.``global``.TryGetValue(name, ref) with
         | true  -> ref.Value
         | false ->
@@ -92,23 +92,23 @@ let rec dump_type: ``type`` -> string =
     | Void            -> "void"
     | _ as it         -> failwithf "Unsupported type %A." it
 
-let type_substitute (sub_map: (string, string) hashtable) ty = 
+let type_substitute (sub_map: (string, string) hashtable) ty =
     let rec sub ty =
         match ty with
         | Label
         | Terminator
         | PendingTy _
-        | I _           
-        | F _             -> ty 
+        | I _
+        | F _             -> ty
         | Vec(n, ty)      -> Vec(n, sub ty)
         | Arr(n, ty)      -> Arr(n, sub ty)
         | Agg ty_lst      -> Agg(List.map sub ty_lst)
         | Ptr ty          -> Ptr <| sub ty
         | Func(args, ret) -> Func(List.map sub args, sub ret)
         | Void            -> Void
-        | Alias name      -> 
+        | Alias name      ->
         let ty' = ref ""
-        match sub_map.TryGetValue(name, ty') with 
+        match sub_map.TryGetValue(name, ty') with
         | true  -> Alias(ty'.Value)
         | false -> ty
 
@@ -136,7 +136,7 @@ let inline get_align (ty_tb: type_table) ty : int =
     | 0 -> 1
     | otherwise -> otherwise
 
-let inline actual_name name is_glob = 
+let inline actual_name name is_glob =
     name |>> fun name -> name |> if is_glob then fmt "@%s" else fmt "%%%s"
 
 let inline dump_sym {ty = ty; name=name; is_glob=is_glob} =
@@ -176,9 +176,10 @@ let inline gep' ptr' idx offsets =
         val_ty <| dump_sym ptr' <| idx <| join (List.map (fmt "%d") offsets)
     | _ -> failwithf "only pointer type could be perform `getelementptr`, got %A." ptr'.ty
 
-let inline extractelem' vec' idx_ty idx =
+let inline extractelem' vec' idx': string =
     let vec' = dump_sym vec'
-    fmt "extractelement %s, %s %s" vec' idx_ty idx
+    let idx  = dump_sym idx'
+    fmt "extractelement %s, %s" vec' idx
 
 let inline insertelem' vec' val' idx' =
     fmt "insertelement %s, %s, %s"
@@ -186,8 +187,8 @@ let inline insertelem' vec' val' idx' =
     <| dump_sym val'
     <| dump_sym idx'
 
-let inline extractval' agg' (offsets: int list) =
-    fmt "extractvalue %s %s, %s"
+let inline extractval' agg' (offsets: int list): string =
+    fmt "extractvalue %s, %s"
     <| dump_sym agg'
     <| join (List.map (fmt "%d") offsets)
 
@@ -195,9 +196,9 @@ let inline insertval' agg' elt' offsets =
     fmt "insertvalue %s, %s, %s"
         <| dump_sym agg'
         <| dump_sym elt'
-        <| join (List.map to_str offsets)
-   
-let private type_data' ty str = 
+        <| join (List.map (fmt "%d") offsets)
+
+let private type_data' ty str =
     ty, fmt "%s %s" <| dump_type ty <| str
 let rec typed_data: constant -> (``type`` * string) = function
     | PendingConst _ -> failwith "Data not decided yet."
@@ -208,7 +209,7 @@ let rec typed_data: constant -> (``type`` * string) = function
         let length = List.length data_lst
         match List.distinct typed_lst with
         | [ty] ->
-            type_data' 
+            type_data'
             <| Arr(length, ty)
             <| (fmt "[ %s ]" <| join data_lst)
         | _    -> failwith "element types mismatch"
@@ -218,7 +219,7 @@ let rec typed_data: constant -> (``type`` * string) = function
         let length = List.length data_lst
         match List.distinct typed_lst with
         | [ty] ->
-            type_data' 
+            type_data'
             <| Vec(length, ty)
             <| (fmt "< %s >" <| join data_lst)
         | _    -> failwith "element types mismatch"
@@ -226,13 +227,26 @@ let rec typed_data: constant -> (``type`` * string) = function
         let type_lst, data_lst = List.unzip <| List.map typed_data lst
         let length = List.length data_lst
         let agg_ty = Agg(type_lst)
-        type_data' 
+        type_data'
         <| agg_ty
         <| (fmt "{ %s }" <| join data_lst)
     | Undef ty ->
         type_data' ty "undef"
 
-
+let rec find_ty (types: type_table) offsets agg_ty =
+    let rec find_ty offsets agg_ty =
+        match offsets with
+        | [] -> agg_ty
+        | offset :: offsets ->
+        match agg_ty with
+        | Agg(list) -> find_ty offsets list.[offset]
+        | Vec(n, ty) ->
+            if n < offset then find_ty offsets ty
+            else failwithf "IndexError."
+        | Alias(name) ->
+            find_ty offsets <| types.[name]
+        | _ as ty -> failwithf "Type error %A." ty 
+    find_ty offsets agg_ty
 
 let type_eq =
     function
