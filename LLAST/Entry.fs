@@ -1,6 +1,8 @@
 ﻿open LLVM.IR
 open LLVM.Emit
+open LLVM.Infras
 open LLVM.Helper
+open LLVM.Exc
 
 let test (title: string) (ir: llvm) =
     printf "============%s===============\n" title
@@ -8,8 +10,13 @@ let test (title: string) (ir: llvm) =
     let proc = ref Empty
     let type_table = hashtable()
     let emit' = emit <| type_table <| proc
-    emit' ctx <| ir |> ignore
-    printf "%s" proc.Value.to_ir
+    try
+        emit' ctx <| ir |> ignore
+        printf "%s" proc.Value.to_ir
+    with LLException(exc) ->
+        printf "%A" exc
+
+
 
 [<EntryPoint>]
 let main args =

@@ -3,7 +3,19 @@
 Meta language constructs which could be emitted to LLVM IR.
 *)
 
+type location = {
+(**
+for location resolving in exception reporting.
+   *)
+    filename: string
+    lineno  : int
+    colno   : int
+}
+
 type 'a undecided = {
+(**
+for prospective partial processing at AST level.
+   *)
     id: int
 }
 
@@ -18,27 +30,29 @@ type ``type`` =
 | Func  of ``type`` list * ``type``
 | Ptr   of ``type``
 | Alias of name: string
-| Label
+| Label      (** not sure to handle make abstractions for label type*)
 | Terminator (** only works when jump appears inner expression.*)
 | Void
 | PendingTy of ``type`` undecided
 
 type llvm =
-| Bin         of binary_operation
 (** binary operations including comparisons *)
-| App         of llvm * llvm list
+| Bin         of binary_operation
+
 (** application *)
+| App         of llvm * llvm list
 
-| Get         of name: string
 (** get local var *)
-| Let         of name: string * value: llvm * body: llvm
-(** bind local var which create new context*)
-| Defun       of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
-(** define function **)
-| Const       of constant
-(** constant data *)
+| Get         of name: string
 
-(** conversions: trunc, fptrunc, ..., bitcast *)
+(** bind local var which create new context*)
+| Let         of name: string * value: llvm * body: llvm
+
+(** define function **)
+| Defun       of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
+
+| Const       of constant
+
 | DefTy       of name: string * ``type`` list
 
 (** control flow*)
@@ -49,7 +63,7 @@ type llvm =
 | Branch      of cond: llvm * iftrue: string * iffalse: string
 | Jump        of label: string
 
-(** conversion*)
+(** conversions: trunc, fptrunc, ..., bitcast *)
 | ZeroExt     of src: llvm * dest: ``type``    // zext; Ext means extending
 | CompatCast  of src: llvm * dest: ``type``
 | Bitcast     of src: llvm * dest: ``type``
@@ -57,7 +71,7 @@ type llvm =
 (** data accessing and manipulations *)
 (**
 including: load, store, alloca, getelementptr
-           for agg:
+           for aggregate:
             extractvalue
             insertvalue
            for vec:
@@ -75,6 +89,7 @@ including: load, store, alloca, getelementptr
 
 (** others *)
 | Suite       of llvm list
+| Locate      of location * llvm
 | PendingLLVM of llvm undecided
 (**
 switch, indirectbr, return are all terminators and returns Wildcard.
@@ -104,9 +119,7 @@ and binary_operator =
 | Ne
 | PendingBinOp of binary_operator undecided
 
-
 and binary_operation = binary_operator * llvm * llvm
-
 
 and constant =
 | ID    of bit: int * value: int64
@@ -116,6 +129,3 @@ and constant =
 | AggD  of constant list
 | Undef of ``type``
 | PendingConst of constant undecided
-
-
-
