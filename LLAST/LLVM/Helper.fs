@@ -1,5 +1,5 @@
-module LLL.LLVM.Helper
-open LLL.LLVM.IR
+module LLVM.Helper
+open LLVM.IR
 
 let (|>>) (a : 'a option) (f: 'a -> 'b) : 'b =
     match a with
@@ -244,7 +244,7 @@ let rec find_ty (types: type_table) offsets agg_ty =
             if n < offset then find_ty offsets ty
             else failwithf "IndexError."
         | Alias(name) ->
-            find_ty offsets <| types.[name]
+            find_ty (offset :: offsets) <| types.[name]
         | _ as ty -> failwithf "Type error %A." ty 
     find_ty offsets agg_ty
 

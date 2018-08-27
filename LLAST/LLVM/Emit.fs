@@ -1,6 +1,6 @@
-module LLL.LLVM.Emit
-open LLL.LLVM.IR
-open LLL.LLVM.Helper
+module LLVM.Emit
+open LLVM.IR
+open LLVM.Helper
 open System
 
 type 'v arraylist = System.Collections.Generic.List<'v>
@@ -364,7 +364,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let subject = emit' ctx subject
             match subject with
             | {ty = Vec(n, ty)} ->
-                let val'    = emit'  ctx idx
+                let val'    = emit'  ctx val'
                 let idx     = emit' ctx idx
                 if val'.ty =||= ty |> not then
                     failwithf "Invalid usage for instruction `insertelement`. Type mismatch: %A <> %A." ty val'.ty
