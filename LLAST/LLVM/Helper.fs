@@ -244,6 +244,9 @@ let rec typed_data: constant -> (``type`` * string) =
         let type_lst, data_lst = List.unzip <| List.map typed_data lst
         let agg_ty = Agg(type_lst)
         agg_ty %% (fmt "{ %s }" <| join data_lst)
+
+    | BlockAddr(fn_name, label_name) -> 
+        (Ptr <| I 8) %% fmt "blockaddress(@%s, %%%s)" fn_name label_name
     | Undef ty ->
         ty %% "undef"
 

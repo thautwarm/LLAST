@@ -129,5 +129,7 @@ and constant =
 | ArrD  of constant list
 | VecD  of constant list
 | AggD  of constant list
-| Undef of ``type``
+| BlockAddr    of fn_name: string * label_name: string
+| Undef        of ``type``
 | PendingConst of constant undecided
+

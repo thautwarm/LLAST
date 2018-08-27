@@ -58,14 +58,22 @@ let main args =
     let formal_args = [("arg1", I 32)]
     let ret_ty = I 32
 
-    let cond = Bin(Eq, Const <| ID(32, 10L), Get("arg1"))
+    let cond = Suite([BlockAddr("test3", "truelabel") |> Const 
+                      Bin(Eq, Const <| ID(32, 10L), Get("arg1"))])
     let branch = Branch(cond, "truelabel", "falselabel")
 
     let iftrue = Suite([Mark "truelabel"; Jump "tag"])
 
     let iffalse = Suite([Mark "falselabel"; Store(Get "result", Const <| ID(32, 10L))])
 
-    let ifresult = Let("result", Alloca(I 32, None), Suite([branch; iftrue; iffalse; Load(Get "result")]))
+    let ifresult = Let("result", 
+                       Alloca(I 32, None), 
+                       Suite(
+                        [
+                        branch
+                        iftrue 
+                        iffalse 
+                        Load(Get "result")]))
 
     let ret = Suite([Return ifresult; Mark "tag"; Const(ID(32, 15L)) |> Return])
 
