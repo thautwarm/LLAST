@@ -79,9 +79,9 @@ including: load, store, alloca, getelementptr
             insertelement
 *)
 | Alloca      of ``type`` * data: llvm option
-| Load        of name: string
-| Store       of name: string * data: llvm
-| GEP         of name: string * idx : llvm * offsets: int list
+| Load        of subject: llvm
+| Store       of subject: llvm * data: llvm
+| GEP         of subject: llvm * idx : llvm * offsets: int list
 | ExtractElem of subject: llvm * idx: llvm
 | InsertElem  of subject: llvm * val': llvm * idx: llvm
 | ExtractVal  of subject: llvm * indices: int list
