@@ -25,3 +25,4 @@ setup.log
 **/bin
 **/obj
 **/test
+ir-snippets/*.s
