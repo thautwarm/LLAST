@@ -1,6 +1,6 @@
-﻿open LLL.LLVM.IR
-open LLL.LLVM.Emit
-open LLL.LLVM.Helper
+﻿open LLVM.IR
+open LLVM.Emit
+open LLVM.Helper
 
 let test (title: string) (ir: llvm) =
     printf "============%s===============\n" title
@@ -81,7 +81,7 @@ let main args =
             ExtractVal(
                   Let("value",
                       Alloca(Alias "master", None),
-                      GEP("value", Const <| ID(32, 0L), [0])
+                      GEP("value", Const <| ID(32, 0L), [])
                       ),
                   [3; 1])
             )

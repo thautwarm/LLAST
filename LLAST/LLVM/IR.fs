@@ -1,4 +1,4 @@
-﻿module LLL.LLVM.IR
+﻿module LLVM.IR
 (**
 Meta language constructs which could be emitted to LLVM IR.
 *)
