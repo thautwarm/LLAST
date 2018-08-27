@@ -26,7 +26,7 @@ let ``My test`` () =
     let ret_ty = I 32
     let body = Bin(Add, Get "arg1", Get "arg1")
     let defun = Defun("func", formal_args, ret_ty, body)
-    test "simple defun" defun
+    test "simple-defun" defun
 
 
     let formal_args = [("arg1", I 32)]
@@ -34,7 +34,7 @@ let ``My test`` () =
     let body = CompatCast(Bin(Add, Get "arg1", Get "arg1"), F 32)
 
     let defun = Defun("func", formal_args, ret_ty, body)
-    test "test type convert" defun
+    test "test-type-convert" defun
 
     let formal_args = [("arg1", I 32)]
     let ret_ty = F 32
@@ -56,7 +56,7 @@ let ``My test`` () =
     let def_test2 = Defun("test2", formal_args, ret_ty, body)
 
     let suite = Suite([def_test2; def_test1])
-    test "cross definition" suite
+    test "cross-definition" suite
 
     let formal_args = [("arg1", I 32)]
     let ret_ty = I 32
@@ -68,15 +68,12 @@ let ``My test`` () =
 
     let iffalse = Suite([Mark "falselabel"; Store(Get "result", Const <| ID(32, 10L))])
 
-    let ifresult = Let("result", Alloca(I 32, None), Suite([iftrue; iffalse; Load(Get "result")]))
+    let ifresult = Let("result", Alloca(I 32, None), Suite([branch; iftrue; iffalse; Load(Get "result")]))
 
     let ret = Suite([Return ifresult; Mark "tag"; Const(ID(32, 15L)) |> Return])
 
     let whole = Defun("test3", formal_args, ret_ty,
-                      Suite [
-                        branch
-                        ret
-                       ])
+                      ret)
     test "jump" whole
 
 
@@ -93,5 +90,6 @@ let ``My test`` () =
                       ),
                   [3; 1])
             )
-    test "member accessing" <| Suite [ty_def; defun]
+    test "member-accessing" <| Suite [ty_def; defun]
+
     0

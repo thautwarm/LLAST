@@ -85,8 +85,18 @@ let main args =
                       Alloca(Alias "master", None),
                       Load <| GEP(Get "value", Const <| ID(32, 0L), [])
                       ),
-                  [3; 1])
-            )
+                  [3; 1]))
+
     codegen "member-accessing" <| Suite [ty_def; defun]
 
+    let ty_def = DefTy("redyred", [I 32; I 8])
+    let defun  = 
+        Defun("main",
+             [],
+             I 32,
+             Let("c", 
+                 Const <| AggD([ID(32, 10L)
+                                ID(8, 10L)]),
+                 ExtractVal(Get("c"), [0])))
+    codegen "aggregate constant" <| Suite[ty_def; defun]
     0
