@@ -1,32 +1,13 @@
 module LLVM.Helper
 open LLVM.IR
+open LLVM.Infras
+open LLVM.Exc
 
 let (|>>) (a : 'a option) (f: 'a -> 'b) : 'b =
     match a with
-    | None    -> failwithf "%A is not supposed to be None." typeof<'a>
+    | None    -> NullExc <| typeof<'a> |> ll_raise
     | Some(a) -> f a
-type ('k, 'v) hashtable = System.Collections.Generic.Dictionary<'k, 'v>
 
-type type_table = (string,  ``type``) hashtable
-
-type symbol = {
-    name    : string option
-    ty_tb   : type_table
-    ty      : ``type``
-    is_glob : bool
-}
-
-and context = {
-    ``global`` : (string,   symbol) hashtable
-    local      : (string,   symbol) hashtable
-    mutable count   : int
-    prefix          : string (** for context mangling usage *)
-}
-
-let fmt               = sprintf
-let inline to_str arg = fmt "%s" arg
-let inline concat a b = a + "." + b
-let inline join lst   = String.concat ", " <| List.map to_str lst
 
 let void_symbol = {
     name        = None
@@ -40,6 +21,10 @@ let terminator = {
     ty          = Terminator
     ty_tb       = hashtable()
     is_glob     = true
+}
+
+let nil_undecided: ``type`` undecided = {
+    id = -1;
 }
 
 type context with
@@ -73,10 +58,7 @@ type context with
         match ctx.``global``.TryGetValue(name, ref) with
         | true  -> ref.Value
         | false ->
-        failwithf "Context %s cannot resolve symbol %s"
-                 <| ctx.prefix
-                 <| name
-
+        NameNotFound(name, ctx) |> ll_raise
 let rec dump_type: ``type`` -> string =
     function
     | I bit           -> fmt "i%d" bit
@@ -90,7 +72,10 @@ let rec dump_type: ``type`` -> string =
     | Func(args, ret) ->
         fmt "%s (%s)" <| dump_type ret <| join (List.map dump_type args)
     | Void            -> "void"
-    | _ as it         -> failwithf "Unsupported type %A." it
+    | _ as it         -> failwithf "Type %A cannot be dumped." it
+
+
+let type_mimatch(expected: ``type``, got: ``type``) = UnexpectedUsage(dump_type got, dump_type expected, "type equation constriant")
 
 let type_substitute (sub_map: (string, string) hashtable) ty =
     let rec sub ty =
@@ -117,7 +102,7 @@ let type_substitute (sub_map: (string, string) hashtable) ty =
 let inline get_align (ty_tb: type_table) ty : int =
     let rec get_align (recur_set: string Set) =
         function
-        | PendingTy _ -> failwithf "Type not decided yet."
+        | PendingTy id -> NotDecidedYet id |> ll_raise
         | Void   -> 0
         | Func _ -> 0
         | F bit
@@ -129,11 +114,11 @@ let inline get_align (ty_tb: type_table) ty : int =
         | Alias name when not <| Set.contains name recur_set ->
             let ty = ty_tb.[name]
             get_align <| Set.add name recur_set <| ty
-        | Alias _ -> 0
-        | _  as it    -> failwithf "%A cannot be used to calculate align." it
+        | Alias _     -> 0
+        | _  as it    -> InvalidUsage(dump_type it, "get_align") |> ll_raise
     in
     match get_align <| set [] <| ty with
-    | 0 -> 1
+    | 0         -> 1
     | otherwise -> otherwise
 
 let inline actual_name name is_glob =
@@ -153,7 +138,7 @@ let inline alloca' ptr' data' =
         | _             -> ptr'.ty, false
 
     if not is_ptr then
-        failwith "allocation can only be applied on ptr type!"
+        InvalidUsage(dump_type ptr'.ty, "allocation") |> ll_raise
     else
     let align = get_align ptr'.ty_tb alloca_ty
     match data' with
@@ -174,7 +159,7 @@ let inline gep' ptr' idx offsets =
     let val_ty = dump_type val_ty
     fmt "getelementptr inbounds %s, %s, %s, %s"
         val_ty <| dump_sym ptr' <| idx <| join (List.map (fmt "%d") offsets)
-    | _ -> failwithf "only pointer type could be perform `getelementptr`, got %A." ptr'.ty
+    | _ as ty -> UnexpectedUsage(dump_type ty, "Pointer type", "`getlementptr`") |> ll_raise
 
 let inline extractelem' vec' idx': string =
     let vec' = dump_sym vec'
@@ -201,31 +186,33 @@ let inline insertval' agg' elt' offsets =
 let private type_data' ty str =
     ty, fmt "%s %s" <| dump_type ty <| str
 let rec typed_data: constant -> (``type`` * string) = function
-    | PendingConst _ -> failwith "Data not decided yet."
-    | ID(bit, value) -> type_data' <| I bit <| fmt "%d" value
-    | FD(bit, value) -> type_data' <| F bit <| fmt "%f" value
-    | ArrD lst       ->
+    | PendingConst id -> NotDecidedYet(id) |> ll_raise
+    | ID(bit, value)  -> type_data' <| I bit <| fmt "%d" value
+    | FD(bit, value)  -> type_data' <| F bit <| fmt "%f" value
+    | ArrD lst        ->
         let typed_lst, data_lst = List.unzip <| List.map typed_data lst
         let length = List.length data_lst
         match List.distinct typed_lst with
+        | []   -> failwith "Impossible"
         | [ty] ->
             type_data'
             <| Arr(length, ty)
             <| (fmt "[ %s ]" <| join data_lst)
-        | _    -> failwith "element types mismatch"
+        | a :: b :: _ -> type_mimatch(a, b) |> ll_raise
 
     | VecD lst ->
         let typed_lst, data_lst = List.unzip <| List.map typed_data lst
         let length = List.length data_lst
         match List.distinct typed_lst with
+        | []   -> failwith "Impossible"
         | [ty] ->
             type_data'
             <| Vec(length, ty)
             <| (fmt "< %s >" <| join data_lst)
-        | _    -> failwith "element types mismatch"
+        | a :: b :: _ -> type_mimatch(a, b) |> ll_raise
+
     | AggD lst ->
         let type_lst, data_lst = List.unzip <| List.map typed_data lst
-        let length = List.length data_lst
         let agg_ty = Agg(type_lst)
         type_data'
         <| agg_ty
@@ -242,10 +229,11 @@ let rec find_ty (types: type_table) offsets agg_ty =
         | Agg(list) -> find_ty offsets list.[offset]
         | Vec(n, ty) ->
             if n < offset then find_ty offsets ty
-            else failwithf "IndexError."
+            else
+            UnexpectedUsage(fmt "index %d" offset, fmt "index n, n < %d" n, fmt "Index on type %s" <| dump_type agg_ty) |> ll_raise
         | Alias(name) ->
             find_ty (offset :: offsets) <| types.[name]
-        | _ as ty -> failwithf "Type error %A." ty 
+        | _ as ty -> InvalidUsage("Get member", dump_type ty) |> ll_raise
     find_ty offsets agg_ty
 
 let type_eq =

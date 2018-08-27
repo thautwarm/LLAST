@@ -1,7 +1,8 @@
 module LLVM.Emit
 open LLVM.IR
+open LLVM.Infras
 open LLVM.Helper
-open System
+open LLVM.Exc
 
 type 'v arraylist = System.Collections.Generic.List<'v>
 
@@ -87,14 +88,14 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     | I a, I b when a < b -> "sext"
                     | F a, F b when a > b -> "fptrunc"
                     | F a, F b when a < b -> "fpext"
-                    | _ -> failwithf "invalid convert %A -> %A" ty dest
+                    | _ -> InvalidUsage(fmt "%s -> %s" <| dump_type ty <| dump_type dest, "convert") |> ll_raise
                 in get_inst(ty, dest)
             if inst = "" then sym
             else
             convert_routine inst sym dest
 
         function
-        | PendingLLVM _ -> failwith "Undecided llvm ast."
+        | PendingLLVM _ as id -> NotDecidedYet(id) |> ll_raise
         | Const constant ->
             let ty, codestr = typed_data constant
             let name, proc' = assign_tmp ctx codestr
@@ -145,7 +146,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 | _ as sym        ->
                     let ret_stmt = fmt "ret %s" <| dump_sym sym
                     if sym.ty <> ret_ty then
-                        failwithf "function return type %A conflicts with end of body %A" ret_ty sym.ty
+                        Message("function return type conflitcs with end of body") <*> type_mimatch(ret_ty, sym.ty) |> ll_raise
                     else
                     inner_proc.contents <- Combine(inner_proc.contents, Ordered ret_stmt)
                 let endl = fmt "}" |> Ordered
@@ -158,8 +159,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
         | ZeroExt(src, dest) ->
             let sym = emit' ctx src
             if is_int_ext(sym.ty, dest) then convert_routine "zext" sym dest
-            else failwithf "Invalid zero extending at %A" sym.name
-
+            else InvalidUsage(dump_type sym.ty, "zero extending") |> ll_raise
         | Bitcast(src, dest) ->
             let sym = emit' ctx src
             convert_routine "bitcast" sym dest
@@ -190,7 +190,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             terminator
         | Branch(cond, iffalse, iftrue) ->
             let cond = emit' ctx cond
-            if cond.ty =||= I 1 |> not then failwith "Condition on instruction branch must be i1."
+            if cond.ty =||= I 1 |> not then UnexpectedUsage(dump_type cond.ty, "i1", "branch condition") |> ll_raise
             else
             let cond = dump_sym cond
             let codestr = fmt "br %s, label %%%s, label %%%s" cond iftrue iffalse
@@ -221,7 +221,10 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let {ty=rty; name = rname; is_glob=r_is_glob} = emit' ctx rhs
             let ty =
                 if lty <> rty then
-                    failwithf "type mismatch: %A <> %A" lty rty
+                    Message(fmt "Invalid binary operation(%A)" bin_op)
+                    <*>
+                    type_mimatch(lty, rty)
+                    |> ll_raise
                 else
                 lty
             let inst, ret_ty =
@@ -259,7 +262,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     | op, Vec(n, ty) ->
                         match get_inst_and_ret_ty(op, ty) with
                         | inst, ty -> inst, Vec(n, ty)
-                    | _ -> failwithf "invalid binary operation %A." bin
+                    | _ -> InvalidUsage(fmt "%A" bin, "binary operation") |> ll_raise
                 get_inst_and_ret_ty(bin_op, lty)
             let lname = actual_name lname l_is_glob
             let rname = actual_name rname r_is_glob
@@ -277,7 +280,11 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             match fn_ty with
             | Func(fn_arg_tys, fn_ret_ty) ->
                 if fn_arg_tys <> [for each in args -> each.ty]
-                then failwith "function input types mismatch."
+                then
+                    Message("function input arg types mismatch")
+                    <*>
+                    type_mimatch(fn_ty, Func([for each in args -> each.ty], fn_ret_ty))
+                    |> ll_raise
                 else
                 let arg_string =
                     List.map dump_sym args
@@ -293,7 +300,8 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 let name, proc' = assign_tmp ctx codestr
                 combine proc'
                 {name=Some name; ty = fn_ret_ty; is_glob=false; ty_tb=types}
-            | _ -> failwith "function call type mismatch."
+            | _ ->
+            type_mimatch(Func([PendingTy nil_undecided], PendingTy nil_undecided), fn_ty) |> ll_raise
 
         | Suite suite ->
             let rec loop = function
@@ -308,7 +316,10 @@ let rec emit (types: type_table) (proc: ref<proc>) =
         | Alloca(ty, Some(data)) ->
             let data = emit' ctx data
             if ty <> data.ty then
-                failwithf "allocating failed for type mismatch: %A <> %A." ty data.ty
+                Message("allocation")
+                <*>
+                type_mimatch(ty, data.ty)
+                |> ll_raise
             else
             let ptr = {ty=Ptr ty; name = Some <| ctx.alloc_name; ty_tb=types; is_glob=false}
             let codestr = alloca' ptr <| Some data
@@ -328,18 +339,19 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 let name, proc' = load' ptr |> assign_tmp ctx
                 combine proc'
                 {name=Some name; ty_tb=types; is_glob=false; ty=val_ty}
-            | _ ->  failwithf "invalid load instruction, expected Ptr of some type, got type %A." ptr.ty
+            | _ ->
+            UnexpectedUsage("Pointer type", dump_type ptr.ty, "`load` type") |> ll_raise
 
         | Store(name, data) ->
             let {ty = ty_of_data} as data = emit' ctx data
             match ctx.find name with
             | {ty=Ptr val_ty} as ptr ->
                 if val_ty <> ty_of_data then
-                    failwithf "invalid store instruction, %A mismatch %A." val_ty ty_of_data
+                    UnexpectedUsage(dump_type val_ty, dump_type ty_of_data, "`store` arg type") |> ll_raise
                 else
                 Ordered <| store' data ptr |> combine
                 void_symbol
-            | _ as ty -> failwithf "invalid load instruction, expected Ptr of some type, got type %A." ty
+            | {ty=ty} -> UnexpectedUsage("Pointer type", dump_type ty, "`store` arg type") |> ll_raise
 
         | GEP(name, idx, offsets) ->
             let idx = emit' ctx idx
@@ -350,7 +362,8 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 let name, proc' = gep' ptr idx offsets  |> assign_tmp ctx
                 combine proc'
                 {name=Some name; ty = ret_ty; is_glob=false; ty_tb=types}
-            | _ -> failwith "Invalid usage for instruction `getelementptr`."
+            | {ty=ty} ->
+            InvalidUsage(dump_type ty, "`getlementptr` arg type") |> ll_raise
         | ExtractElem(subject, idx) ->
             let subject = emit' ctx subject
             let idx     = emit' ctx idx
@@ -359,19 +372,22 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 let name, proc' = extractelem' subject idx |> assign_tmp ctx
                 combine proc'
                 {ty=ty; name = Some name; ty_tb=types; is_glob = false}
-            | _ -> failwithf "Invalid usage for instruction `extractelement`."
+            | {ty=ty} ->
+            InvalidUsage(dump_type ty, "`extractelement` arg type") |> ll_raise
         | InsertElem(subject, val', idx) ->
             let subject = emit' ctx subject
             match subject with
-            | {ty = Vec(n, ty)} ->
+            | {ty = Vec(_, ty)} ->
                 let val'    = emit'  ctx val'
                 let idx     = emit' ctx idx
                 if val'.ty =||= ty |> not then
-                    failwithf "Invalid usage for instruction `insertelement`. Type mismatch: %A <> %A." ty val'.ty
+                    Message("`insertelementptr` arg types mismatch") <*> type_mimatch(ty, val'.ty) |> ll_raise
                 let name, proc' = insertelem' subject val' idx |> assign_tmp ctx
                 combine proc'
                 {ty = ty; name = Some name; ty_tb = types; is_glob = false}
-            | _ as ty -> failwithf "Invalid usage for instruction `insertelement`. Expected type of first operand to be %A, got %A" subject.ty ty
+            | {ty=ty} ->
+            InvalidUsage(dump_type ty, "`insertelement` arg type") |> ll_raise
+
 
         | ExtractVal(subject, indices) ->
             let subject = emit' ctx subject
@@ -386,4 +402,10 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let name, proc' = insertval' subject val' indices |> assign_tmp ctx
             combine proc'
             {ty = ty; name = Some name; ty_tb = types; is_glob=false}
+        | Locate(loc, llvm) ->
+            try
+                emit' ctx llvm
+            with LLException(exc) ->
+            LocatedExc(exc, loc) |> ll_raise
+
     emit'
