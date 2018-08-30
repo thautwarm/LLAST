@@ -62,6 +62,7 @@ type context with
         NameNotFound(name, ctx) |> ll_raise
 let rec dump_type: ``type`` -> string =
     function
+    | U bit
     | I bit           -> fmt "i%d" bit
     | F 32            -> "float"
     | F 64            -> "double"
@@ -84,6 +85,7 @@ let type_substitute (sub_map: (string, string) hashtable) ty =
         | Label
         | Terminator
         | PendingTy _
+        | U _
         | I _
         | F _             -> ty
         | Vec(n, ty)      -> Vec(n, sub ty)
@@ -108,6 +110,7 @@ let inline get_align (ty_tb: type_table) ty : int =
         | PendingTy id -> NotDecidedYet id |> ll_raise
         | Void   -> 0
         | Func _ -> 0
+        | U bit
         | F bit
         | I bit  -> bit/8
         | Ptr _  -> 8
@@ -130,6 +133,7 @@ let inline get_size_and_align(ty_tb: type_table) ty : int64 * int64 =
         | PendingTy id -> NotDecidedYet id |> ll_raise
         | Void         -> InvalidUsage("type void", "sizeof") |> ll_raise
         | Func _       -> InvalidUsage("type function", "sizeof") |> ll_raise
+        | U bit
         | I bit
         | F bit        -> bit/8
         | Ptr _        -> 8
@@ -220,6 +224,7 @@ let private (%%) ty str =
 let rec typed_data: constant -> (``type`` * string) = 
     function
     | PendingConst id -> NotDecidedYet(id) |> ll_raise
+    | UD(bit, value)  -> U bit %% fmt "%u" value
     | ID(bit, value)  -> I bit %% fmt "%d" value
     | FD(bit, value)  -> F bit %% fmt "%f" value
     | ArrD lst        ->

@@ -22,6 +22,7 @@ for prospective partial processing at AST level.
 type 'v asoc_list = (string * 'v) list
 
 type ``type`` =
+| U     of bit: int
 | I     of bit: int
 | F     of bit: int
 | Arr   of len: int * ``type``
@@ -124,6 +125,7 @@ and binary_operator =
 and binary_operation = binary_operator * llvm * llvm
 
 and constant =
+| UD    of bit: int * value: uint64
 | ID    of bit: int * value: int64
 | FD    of bit: int * value: float
 | ArrD  of constant list

@@ -251,33 +251,45 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let inst, ret_ty =
                 let rec get_inst_and_ret_ty =
                     function
-                    | Add, (I _ as ty) -> "add", ty
+                    | Add, (U _ | I _ as ty) -> "add", ty
                     | Add, (F _ as ty) -> "fadd",ty
-                    | Sub, (I _ as ty) -> "sub",ty
+                    | Sub, (U _ | I _ as ty) -> "sub",ty
                     | Sub, (F _ as ty) -> "fsub",ty
-                    | Mul, (I _ as ty) -> "mul",ty
+                    | Mul, (U _ | I _ as ty) -> "mul",ty
                     | Mul, (F _ as ty) -> "fmul",ty
-                    | Rem, (I _ as ty) -> "srem",ty
+                    | Rem, (U _ | I _ as ty) -> "srem",ty
                     | Rem, (F _ as ty) -> "frem",ty
-                    | Div, (I _ as ty) -> "sdiv",ty
+                    | Div, (U _ | I _ as ty) -> "sdiv",ty
                     | Div, (F _ as ty) -> "fdiv",ty
-                    | LSh, (I _ as ty) -> "shl",ty
-                    | LShr,(I _ as ty) -> "lshr",ty
+
+                    | LSh, (U _ | I _ as ty) -> "shl",ty
+                    | LShr,(U _ | I _ as ty) -> "lshr",ty
                     | AShr,(I _ as ty) -> "ashr",ty
-                    | And, (I _ as ty) -> "and",ty
-                    | Or,  (I _ as ty) -> "or",ty
-                    | XOr, (I _ as ty) -> "xor",ty
+                    | And, (U _ | I _ as ty) -> "and",ty
+                    | Or,  (U _ | I _ as ty) -> "or",ty
+                    | XOr, (U _ | I _ as ty) -> "xor",ty
                     // comparator
+                    | Eq, U _
                     | Eq, I _ -> "icmp eq" , I 1
                     | Eq, F _ -> "fcmp oeq", I 1
+                    
+                    | Ne, U _
                     | Ne, I _ -> "icmp ne" , I 1
                     | Ne, F _ -> "fcmp one", I 1
+                    
+                    | Gt, U _ -> "icmp ugt", I 1
                     | Gt, I _ -> "icmp sgt", I 1
                     | Gt, F _ -> "fcmp ogt", I 1
+
+                    | Ge, U _ -> "icmp uge", I 1
                     | Ge, I _ -> "icmp sge", I 1
                     | Ge, F _ -> "fcmp oge", I 1
+
+                    | Lt, U _ -> "icmp ult", I 1
                     | Lt, I _ -> "icmp slt", I 1
                     | Lt, F _ -> "fcmp olt", I 1
+                    
+                    | Le, U _ -> "icmp ule", I 1
                     | Le, I _ -> "icmp sle", I 1
                     | Le, F _ -> "fcmp ole", I 1
                     | op, Vec(n, ty) ->
