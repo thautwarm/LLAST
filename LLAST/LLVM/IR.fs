@@ -133,3 +133,4 @@ and constant =
 | Undef        of ``type``
 | PendingConst of constant undecided
 
+let inline (@) (llvm: llvm) (location: location) = Locate(location, llvm)

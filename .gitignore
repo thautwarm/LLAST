@@ -26,3 +26,4 @@ setup.log
 **/obj
 **/test
 ir-snippets/*.s
+.idea/
