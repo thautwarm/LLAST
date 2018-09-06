@@ -13,11 +13,15 @@ let rec visit (ctx: context) (update:context -> llvm -> llvm) ast : llvm =
 and fmap ctx f ast =
     let pctx = f ctx
     match ast with
-    | IfExp(ty, cond, thenBlock, elseBlock)
-        -> IfExp(ty,
-                 pctx cond,
-                 pctx thenBlock,
-                 pctx elseBlock)
+    | IfExp(ty, cond, thenBlock, elseBlock) 
+        -> IfExp(ty, 
+            pctx ".cond" cond,
+            pctx ".then" thenBlock,
+            pctx ".else" elseBlock)
+    | WhileExp(cond,body)
+        -> WhileExp(
+            pctx ".whileCond" cond,
+            pctx ".whileBody" body)
     (**TODO: Add context transitioning for ALL other constructs*)
     | Bin(op,a,b)
         -> Bin(op,(f ctx) a, (f ctx) b)
@@ -92,6 +96,23 @@ let elimIfElse ctx ast =
         | a -> a
     visit ctx ifte ast
 
+let elimWhile ctx ast = 
+    let whileExp ctx ast = 
+        match ast with
+        | WhileExp(cond, body) -> 
+            let beginLabel = ctx.prefix + ".beginWhile"
+            let beginBodyLabel = ctx.prefix + ".beginWhileBody"
+            let endlabel = ctx.prefix + ".endWhile"
+            Suite [
+                Mark(beginLabel)
+                Branch(cond, beginBodyLabel, endlabel)
+                Mark beginBodyLabel
+                body
+                Jump(beginLabel)
+                Mark endlabel
+            ]
+        | a -> a
+    visit ctx whileExp ast
 
 let rec emit (types: type_table) (proc: ref<proc>) =
     let combine b =
