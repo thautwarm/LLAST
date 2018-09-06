@@ -11,13 +11,13 @@ let rec visit (ctx: context) (update:context -> llvm -> llvm) ast : llvm =
     update ctx <| fmap ctx (fun c -> visit c update) ast
 
 and fmap ctx f ast =
-    let pctx (s: string) = f {ctx with prefix = ctx.prefix + s}
+    let pctx = f ctx
     match ast with
     | IfExp(ty, cond, thenBlock, elseBlock)
         -> IfExp(ty,
-                 pctx ".cond" cond,
-                 pctx ".then" thenBlock,
-                 pctx ".else" elseBlock)
+                 pctx cond,
+                 pctx thenBlock,
+                 pctx elseBlock)
     (**TODO: Add context transitioning for ALL other constructs*)
     | Bin(op,a,b)
         -> Bin(op,(f ctx) a, (f ctx) b)
@@ -68,20 +68,24 @@ let elimIfElse ctx ast =
     let ifte ctx ast =
         match ast with
         | IfExp(ty, cond, thenBlock, elseBlock) ->
-            let truelabel = ctx.prefix + ".truelabel"
-            let falselabel = ctx.prefix + ".falselabel"
-            let endlabel = ctx.prefix + ".endlabel"
+            let truelabel = "truelabel"
+            let falselabel = "falselabel"
+            let endlabel = "endlabel"
             Let(
                 ".result",
                 Alloca(ty, None),
                 Suite
                   [
                     Branch(cond, truelabel, falselabel)
+                    
                     Mark truelabel
                     Store(Get(".result"), thenBlock)
                     Jump(endlabel)
+                    
                     Mark(falselabel)
                     Store(Get(".result"), elseBlock)
+                    Jump(endlabel)
+
                     Mark(endlabel)
                     Load(Get(".result"))
                   ])

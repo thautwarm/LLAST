@@ -60,6 +60,7 @@ type context with
         | true  -> ref.Value
         | false ->
         NameNotFound(name, ctx) |> ll_raise
+
 let rec dump_type: ``type`` -> string =
     function
     | U bit
