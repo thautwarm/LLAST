@@ -4,7 +4,7 @@
  @.const.3 = private unnamed_addr constant i32 456, align 4
  @.const.4 = private unnamed_addr constant i32 111, align 4
  @.const.5 = private unnamed_addr constant i32 222, align 4
-define i32 @main(i32 %ll.test3.arg1){
+define i32 @test3(i32 %ll.test3.arg1){
  %ll.test3.0 = alloca i32, align 4
  %ll.test3.1.0 = alloca i32, align 4
  %ll.test3.1.1.0 = load i1, i1* @.const.0
@@ -18,7 +18,6 @@ ll.test3.1.1.3:
 ll.test3.1.1.5:
  %ll.test3.1.1.6 = load i32, i32* @.const.3
  store i32 %ll.test3.1.1.6, i32* %ll.test3.1.0
- br label %ll.test3.1.1.7
 ll.test3.1.1.7:
  %ll.test3.1.1.8 = load i32, i32* %ll.test3.1.0
  %ll.test3.1.2 = load i32, i32* @.const.3
@@ -31,8 +30,3 @@ ll.test3.1.4:
 ll.test3.1.6:
  %ll.test3.1.7 = load i32, i32* @.const.5
  store i32 %ll.test3.1.7, i32* %ll.test3.0
- br label %ll.test3.1.8
-ll.test3.1.8:
- %ll.test3.1.9 = load i32, i32* %ll.test3.0
- ret i32 %ll.test3.1.9
-}
