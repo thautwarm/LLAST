@@ -1,5 +1,4 @@
 ﻿open LLVM.IR
-open LLVM.IRPlus
 open LLVM.Emit
 open LLVM.Infras
 open LLVM.Helper
@@ -13,6 +12,16 @@ let codegen (title: string) (llvm: llvm): unit =
     let emit' = emit <| type_table <| proc
     try
         emit' ctx <| llvm |> ignore
+        System.IO.File.WriteAllText(fmt "../../../../ir-snippets/%s.ll" title,  proc.Value.to_ir)
+    with LLException(exc) ->
+        printf "%A" exc
+let codegenPlus (title: string) (llvm: llvm): unit =
+    let ctx = context.init
+    let proc = ref Empty
+    let type_table = hashtable()
+    let emit' = emit <| type_table <| proc
+    try
+        emit' ctx <| elimIfElse ctx llvm |> ignore
         System.IO.File.WriteAllText(fmt "../../../../ir-snippets/%s.ll" title,  proc.Value.to_ir)
     with LLException(exc) ->
         printf "%A" exc
@@ -82,9 +91,17 @@ let main args =
                       ret)
     codegen "jump" whole
 
-    let cond1 = IR <| Bin(Eq, Const (ID(1,1L)), Const (ID(1,0L)))
-    let then1 = (ID(32,123L))
-    let else1 = (ID(32,456L))
+    let cond1 = Bin(Eq, Const (ID(1,1L)), Const (ID(1,0L)))
+    let then1 = Const<|ID(32,123L)
+    let else1 = Const<|ID(32,456L)
+    let cond2 = Bin(Eq,IfExp(I 32,cond1,then1,else1),else1)
+    let then2 = Const<|ID(32,111L)
+    let else2 = Const<|ID(32,222L)
+    let whole = Defun("test3", formal_args, ret_ty,
+                      IfExp(I 32,cond2,then2,else2))
+    
+
+    codegenPlus "IfThenElse" whole
 
 
     let ty_def = DefTy("master", [I 1; I 8; F 32; Agg([I 32; I 64])])

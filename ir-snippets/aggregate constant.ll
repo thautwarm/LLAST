@@ -6,6 +6,6 @@ define i32 @main(){
  %.main.1 = bitcast { i32, i8 } * %.main.0 to i8 *
  call void @llvm.memcpy.p0i8.p0i8.i64(i8 * %.main.1, i8* bitcast({ i32, i8 } * @.const.0 to i8*), i64 8, i32 4, i1 false)
  %.main.2 = load { i32, i8 }, { i32, i8 }* %.main.0
- %.main.c$3.0 = extractvalue { i32, i8 } %.main.2, 0
- ret i32 %.main.c$3.0
+ %.main.3.0 = extractvalue { i32, i8 } %.main.2, 0
+ ret i32 %.main.3.0
 }
