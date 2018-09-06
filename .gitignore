@@ -25,5 +25,5 @@ setup.log
 **/bin
 **/obj
 **/test
-ir-snippets/*.s
+ir-snippets/
 .idea/
