@@ -11,10 +11,12 @@ let codegen (title: string) (llvm: llvm): unit =
     let type_table = hashtable()
     let emit' = emit <| type_table <| proc
     try
-        emit' ctx <| elimIfElse ctx llvm |> ignore
-        System.IO.File.WriteAllText(fmt "../../../../ir-snippets/%s.ll" title,  proc.Value.to_ir)
+        emit' ctx <| visit ctx (fun ctx -> elimIfElse ctx >> elimWhile ctx) llvm |> ignore
+        System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title,  proc.Value.to_ir)
     with LLException(exc) ->
-        printf "%A" exc
+        match exc with
+        | NameNotFound(name, ctx) -> 
+            printfn "%s \n %A" name ctx
 
 [<EntryPoint>]
 let main args =
@@ -58,7 +60,7 @@ let main args =
     let formal_args = [("arg1", I 32)]
     let ret_ty = I 32
 
-    let cond = Suite([BlockAddr("test3", "truelabel") |> Const 
+    let cond = Suite([BlockAddr("main", "truelabel") |> Const 
                       Bin(Eq, Const <| ID(32, 10L), Get("arg1"))])
 
     let branch = Branch(cond, "truelabel", "falselabel")
@@ -79,7 +81,7 @@ let main args =
                         ]))
 
     let ret = Return ifresult
-    let whole = Defun("test3", formal_args, ret_ty,
+    let whole = Defun("main", formal_args, ret_ty,
                       ret)
     codegen "jump" whole
 
@@ -89,11 +91,37 @@ let main args =
     let cond2 = Bin(Eq,IfExp(I 32, cond1, then1, else1), else1)
     let then2 = Const<|ID(32, 111L)
     let else2 = Const<|ID(32, 222L)
-    let whole = Defun("test3", formal_args, ret_ty,
+    let whole = Defun("main", formal_args, ret_ty,
                       IfExp(I 32, cond2, then2, else2))
     
 
     codegen "IfThenElse" whole
+
+
+    
+    let formal_args = []
+    let premire after = Let(
+        "b", 
+        Alloca(I 32, Some <| Const (ID(32,0L))), 
+        Let(
+            "a",
+            Alloca(I 32, Some <| Const (ID(32,0L))),
+            after))
+    let cond = Bin(Lt,Load(Get("a")),Const(ID(32,123L)))
+    let body = Suite [
+        Store(Get("a"),Bin(Add,Load(Get("a")),Const(ID(32,1L))))
+        Store(Get("b"),Bin(Add,Load(Get("b")),Const(ID(32,2L))))
+    ]
+    let funcBody = 
+        Return(
+            premire(
+                Suite[
+                    WhileExp(cond,body)
+                    Load(Get("a"))
+                ])
+    )
+    let whole = Defun("main", formal_args, ret_ty, funcBody)
+    codegen "whileTestToDouble" whole
 
 
     let ty_def = DefTy("master", [I 1; I 8; F 32; Agg([I 32; I 64])])
@@ -108,6 +136,7 @@ let main args =
                       Load <| GEP(Get "value", Const <| ID(32, 0L), [])
                       ),
                   [3; 1]))
+           
 
     codegen "member-accessing" <| Suite [ty_def; defun]
 
