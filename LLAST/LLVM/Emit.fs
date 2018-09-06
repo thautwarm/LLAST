@@ -1,23 +1,121 @@
 module LLVM.Emit
-open LLVM.IR
 open LLVM.Infras
 open LLVM.Helper
 open LLVM.Exc
-open RBNF.AST
 open System.Diagnostics
+open LLVM.IR
 
 type 'v arraylist = System.Collections.Generic.List<'v>
 
-let rec visit (update:llvm->llvm) ast : llvm = 
-    fmap (visit update << update) ast 
-and fmap f ast = 
+let rec visit (ctx: context) (update:context -> llvm -> llvm) ast : llvm =
+    update ctx <| fmap ctx (fun c -> visit c update) ast
+
+and fmap ctx f ast =
+    let pctx = f ctx
     match ast with
-    | IfExp(ty,a,b,c) -> IfExp(ty, f a,f b,f c)
-    | Bin(op,a,b) -> Bin(op,f a,f b)
-    | App(a,xs) -> App(f a,List.map f xs)
-    | Let(s,a,b) -> Let(s,f a,f b) 
-    | Defun(n,a,ty,ll) -> Defun(n,a,ty,f ll)
-    | Switch(cond,cases,s) -> Switch(f cond,List.map (fun (ll,s) -> (f ll,s)) cases, s)
+    | IfExp(ty, cond, thenBlock, elseBlock)
+        -> IfExp(ty,
+            pctx cond,
+            pctx thenBlock,
+            pctx elseBlock)
+    | WhileExp(cond,body)
+        -> WhileExp(
+            pctx cond,
+            pctx body)
+    (**TODO: Add context transitioning for ALL other constructs*)
+    | Bin(op,a,b)
+        -> Bin(op,(f ctx) a, (f ctx) b)
+    | App(a,xs)
+        -> App((f ctx) a,List.map (f ctx) xs)
+    | Let(s,a,b)
+        -> Let(s,(f ctx) a, (f ctx) b)
+    | Defun(n,a,ty,ll)
+        -> Defun(n, a, ty, (f ctx) ll)
+    | Switch(cond, cases, s)
+        -> LLVM.IR.Switch((f ctx) cond,List.map (fun (ll, s) -> ((f ctx) ll,s)) cases, s)
+    | IndrBr(cond,labels)
+        -> IndrBr((f ctx) cond, labels)
+    | Return(a)
+        -> Return ((f ctx) a)
+    | Branch(cond, s, t)
+        -> Branch((f ctx) cond, s, t)
+    | ZeroExt(a, t)
+        -> ZeroExt((f ctx) a, t)
+    | CompatCast(a, t)
+        -> CompatCast((f ctx) a, t)
+    | Bitcast(a, t)
+        -> Bitcast((f ctx) a, t)
+    | Alloca (t, Some a)
+        -> Alloca(t, Some((f ctx) a))
+    | Load(sub)
+        -> Load((f ctx) sub)
+    | Store(a,b)
+        -> Store((f ctx) a, (f ctx) b)
+    | GEP(a,b,offsets)
+        -> GEP((f ctx) a, (f ctx) b, offsets)
+    | ExtractElem(a, b)
+        -> ExtractElem(a, b)
+    | InsertElem(a, b, c)
+        -> InsertElem((f ctx) a, (f ctx) b, (f ctx) c)
+    | ExtractVal(a, xs)
+        -> ExtractVal((f ctx) a, xs)
+    | InsertVal(a,b, xs)
+        -> InsertVal((f ctx) a, (f ctx) b, xs)
+    | Suite (xs)
+        -> Suite(List.map (f ctx) xs)
+    | Locate(l, a)
+        -> Locate(l, (f ctx) a)
+
+    | a -> a
+
+let elimIfElse ctx =
+    function
+    | IfExp(ty, cond, thenBlock, elseBlock) ->
+        let truelabel = "truelabel"
+        let falselabel = "falselabel"
+        let endlabel = "endlabel"
+        Let(
+            ".result",
+            Alloca(ty, None),
+            Suite
+                [
+                Branch(cond, truelabel, falselabel)
+
+                Mark truelabel
+                Store(Get(".result"), thenBlock)
+                Jump(endlabel)
+
+                Mark(falselabel)
+                Store(Get(".result"), elseBlock)
+                Jump(endlabel)
+
+                Mark(endlabel)
+                Load(Get(".result"))
+                ])
+    | a -> a
+
+
+let elimWhile ctx =
+    function
+    | WhileExp(cond, body) ->
+        let beginLabel = ctx.prefix + ".beginWhile"
+        let beginBodyLabel = ctx.prefix + ".beginWhileBody"
+        let endlabel = ctx.prefix + ".endWhile"
+        Suite [
+            Jump(beginLabel)
+
+            Mark(beginLabel)
+            Branch(cond, beginBodyLabel, endlabel)
+
+            Mark beginBodyLabel
+            body
+            Jump(beginLabel)
+
+            Mark endlabel
+        ]
+    | a -> a
+
+
 let rec emit (types: type_table) (proc: ref<proc>) =
     let combine b =
         proc.contents <- Combine(proc.contents, b)
@@ -66,7 +164,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             else
             convert_routine inst sym dest
 
-        let load_llvm ptr = 
+        let load_llvm ptr =
             match ptr with
             | {ty = Ptr val_ty} ->
                 let name, proc' = load' ptr |> assign_tmp ctx
@@ -74,8 +172,8 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 {name=Some name; ty_tb=types; is_glob=false; ty=val_ty}
             | _ ->
             UnexpectedUsage("Pointer type", dump_type ptr.ty, "`load` type") |> ll_raise
-        
-        let store_llvm (ptr) ({ty = ty_of_data} as data) = 
+
+        let store_llvm (ptr) ({ty = ty_of_data} as data) =
             match ptr with
             | {ty=Ptr val_ty} ->
                 if val_ty <> ty_of_data then
@@ -89,20 +187,19 @@ let rec emit (types: type_table) (proc: ref<proc>) =
         | PendingLLVM _ as id -> NotDecidedYet(id) |> ll_raise
         | Const constant ->
             let constant, proc' = get_constant types ctx constant
-            
             match proc' with
-            | Empty -> 
+            | Empty ->
                 ()
             | _     ->
                 combine proc'
             let ty = match constant.ty with Ptr ty -> ty | _ -> failwith "Impossible"
-            match ty with 
+            match ty with
             | I _
-            | F _ -> 
-               
-               load_llvm constant 
+            | F _ ->
+
+               load_llvm constant
             | _  ->
-               try 
+               try
                   Decl("llvm.memcpy.p0i8.p0i8.i64", [Ptr <| I 8; Ptr <| I 8; I 64; I 32; I 1], Void)
                   |> emit' ctx
                   |> ignore
@@ -111,7 +208,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                let size, align = get_size_and_align types ty
                let ret = emit' ctx <| Alloca(ty, None)
                let bitcasted = convert_routine "bitcast" ret <| Ptr(I 8)
-               let codestr = 
+               let codestr =
                    fmt "call void @llvm.memcpy.p0i8.p0i8.i64(%s, i8* bitcast(%s to i8*), i64 %d, i32 %d, i1 false)"
                         <| dump_sym bitcasted
                         <| dump_sym constant
@@ -130,18 +227,18 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             ctx.local.[name] <- value
             emit' ctx body
         | Decl(name, arg_tys, ret_ty) ->
-            if ctx.``global``.ContainsKey name then 
+            if ctx.``global``.ContainsKey name then
                 UnexpectedUsage(fmt "declare %s" name, "declared once", "declaration") |> ll_raise
             else
             let func_ty = Func(arg_tys, ret_ty)
             let name' = Some name
             ctx.``global``.[name] <- {ty = func_ty; name = name'; ty_tb = types; is_glob = true}
-            fmt "declare %s %s(%s)" 
-                <| dump_type ret_ty 
-                <| actual_name name' true 
+            fmt "declare %s %s(%s)"
+                <| dump_type ret_ty
+                <| actual_name name' true
                 <| join (List.map dump_type arg_tys)
-                |> Ordered 
-                |> Predef 
+                |> Ordered
+                |> Predef
                 |> combine
             void_symbol
 
@@ -210,38 +307,70 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             terminator
         | IndrBr(cond, labels) ->
             let cond = emit' ctx cond |> dump_sym
-            let label_string =
-                List.map
-                <| fun label -> fmt "label %s" label
-                <| labels
-                |> join
-            let codestr = fmt "indirectbr %s, [ %s ]" cond label_string
-            combine <| Ordered codestr
+            let pending_code () =
+                let label_string =
+                    List.map
+                    <| fun label -> dump_sym ctx.local.[label]
+                    <| labels
+                    |> join
+
+                let codestr = fmt "indirectbr %s, [ %s ]" cond label_string
+                Ordered codestr
+            combine <| Pending pending_code
             terminator
         | Mark(name) ->
-            fmt "%s:" name |> Ordered |> NoIndent |> combine
-            terminator
-        | Branch(cond, iffalse, iftrue) ->
+            let actual_name = ctx.alloc_name
+            fmt "%s:" actual_name |> Ordered |> NoIndent |> combine
+            let label: symbol =
+                {
+                    name    = Some actual_name
+                    ty_tb   = types
+                    ty      = Label
+                    is_glob = false
+                 }
+            ctx.local.[name] <- label
+            label
+        | Branch(cond, iftrue, iffalse) ->
             let cond = emit' ctx cond
             if cond.ty =||= I 1 |> not then UnexpectedUsage(dump_type cond.ty, "i1", "branch condition") |> ll_raise
             else
             let cond = dump_sym cond
-            let codestr = fmt "br %s, label %%%s, label %%%s" cond iftrue iffalse
-            combine <| Ordered codestr
+            let pending_code() =
+
+                let iffalse = dump_sym ctx.local.[iffalse]
+                let iftrue = dump_sym ctx.local.[iftrue]
+                let codestr = fmt "br %s, %s, %s" cond iftrue iffalse
+                Ordered codestr
+            combine <| Pending pending_code
             terminator
+
         | Jump(label) ->
-            Ordered <| fmt "br label %%%s" label |> combine
+            let pending_code() =
+
+                //failwithf "\n%A %A\n" (join <| Seq.toList ctx.local.Keys) label
+                let codestr = fmt "br %s" <| dump_sym ctx.local.[label]
+                Ordered codestr
+            combine <| Pending pending_code
             terminator
+
         | Switch(cond, cases, default') ->
             let cond = emit' ctx cond |> dump_sym
             let label_pairs =
                 List.map
                 <| fun (case, label) ->
                     let case = emit' ctx case |> dump_sym
-                    fmt "%s, label %%%s" case label
+                    fun () -> fmt "%s, %s" case <| dump_sym ctx.local.[label]
                 <| cases
-                |> join
-            fmt "switch %s, %%%s [ %s ]" cond default' label_pairs |> Ordered |> combine
+
+            let pending_code() =
+                let default' = dump_sym ctx.local.[default']
+                let label_pairs =
+                    List.map
+                    <| fun lazy_get -> lazy_get()
+                    <| label_pairs
+                    |> join
+                fmt "switch %s, %s [ %s ]" cond default' label_pairs |> Ordered
+            combine <| Pending pending_code
             terminator
         | DefTy(name, ty_lst) ->
             let ty = Agg(ty_lst)
@@ -284,11 +413,11 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     | Eq, U _
                     | Eq, I _ -> "icmp eq" , I 1
                     | Eq, F _ -> "fcmp oeq", I 1
-                    
+
                     | Ne, U _
                     | Ne, I _ -> "icmp ne" , I 1
                     | Ne, F _ -> "fcmp one", I 1
-                    
+
                     | Gt, U _ -> "icmp ugt", I 1
                     | Gt, I _ -> "icmp sgt", I 1
                     | Gt, F _ -> "fcmp ogt", I 1
@@ -300,7 +429,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     | Lt, U _ -> "icmp ult", I 1
                     | Lt, I _ -> "icmp slt", I 1
                     | Lt, F _ -> "fcmp olt", I 1
-                    
+
                     | Le, U _ -> "icmp ule", I 1
                     | Le, I _ -> "icmp sle", I 1
                     | Le, F _ -> "fcmp ole", I 1
@@ -439,5 +568,6 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 emit' ctx llvm
             with LLException(exc) ->
             LocatedExc(exc, loc) |> ll_raise
+        | _ as it -> failwithf "%A" it
 
     emit'

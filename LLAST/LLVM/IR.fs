@@ -37,16 +37,12 @@ type ``type`` =
 | PendingTy of ``type`` undecided
 
 type llvm =
+(** NOT EMMITABLE BEGINS*)
 | IfExp of ``type`` *  cond : llvm * thenBlock : llvm * elseBlock : llvm
+| WhileExp of cond : llvm * body : llvm
 
 
-
-
-
-
-
-
-
+(** NOT EMMITABLE ENDS*)
 
 
 
