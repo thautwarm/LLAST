@@ -1,7 +1,7 @@
-module LLVM.Helper
-open LLVM.IR
-open LLVM.Infras
-open LLVM.Exc
+module LL.Helper
+open LL.IR
+open LL.Infras
+open LL.Exc
 
 let (|>>) (a : 'a option) (f: 'a -> 'b) : 'b =
     match a with
@@ -165,21 +165,16 @@ let inline dump_sym {ty = ty; name=name; is_glob=is_glob} =
 let inline store' val' ptr' =
     fmt "store %s, %s" <| dump_sym val' <| dump_sym ptr'
 
-let inline alloca' ptr' data' =
+let inline alloca' ptr' =
     let alloca_ty, is_ptr =
         match ptr'.ty with
         | Ptr alloca_ty -> alloca_ty, true
         | _             -> ptr'.ty, false
-
     if not is_ptr then
         InvalidUsage(dump_type ptr'.ty, "allocation") |> ll_raise
     else
     let align = get_align ptr'.ty_tb alloca_ty
-    match data' with
-    | None ->
-        fmt "%s = alloca %s, align %d" <| actual_name ptr'.name false <| dump_type alloca_ty <| align
-    | Some data' ->
-    fmt "%s = alloca %s, %s ,align %d" <| actual_name ptr'.name false <| dump_type alloca_ty <| dump_sym data' <| align
+    fmt "%s = alloca %s, align %d" <| actual_name ptr'.name false <| dump_type alloca_ty <| align
 
 let inline load' sym =
     match sym.ty with

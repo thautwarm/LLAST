@@ -1,4 +1,4 @@
-﻿module LLVM.IR
+﻿module LL.IR
 (**
 Meta language constructs which could be emitted to LLVM IR.
 *)
@@ -38,10 +38,10 @@ type ``type`` =
 
 type llvm =
 (** NOT EMMITABLE BEGINS*)
+
+(** control flow constructs*)
 | IfExp of ``type`` *  cond : llvm * thenBlock : llvm * elseBlock : llvm
 | WhileExp of cond : llvm * body : llvm
-
-
 (** NOT EMMITABLE ENDS*)
 
 
@@ -90,7 +90,7 @@ including: load, store, alloca, getelementptr
             extractelement
             insertelement
 *)
-| Alloca      of ``type`` * data: llvm option
+| Alloca      of ``type``
 | Load        of subject: llvm
 | Store       of subject: llvm * data: llvm
 | GEP         of subject: llvm * idx : llvm * offsets: int list
