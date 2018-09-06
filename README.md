@@ -1,11 +1,22 @@
 # LLAST
 
-Low level abstract syntax tree, in ML algebraic data types, to LLVM IR.
 
-See `LLAST/Entry.fs`, the test scripts are at `./ir-snippets`.
+Description
+---------------
 
-You can compile them by using `llc-6.0 <...>.ll`
+LLAST provides multiple level representations of LLVM.
 
+Usually abstract syntax trees constructed by users in the form of algebraic data types are transformed to LLVM IR.
+
+Usage
+---------
+See `LLAST/Entry.fs`, the test scripts are put into `./ir-snippets`.
+To run tests just use `run_tests.py`.
+
+High Level Language Constructs
+---------------------------------------
+
+A set of high level constructs are located at `LLAST/Constructs`.
 
 
 

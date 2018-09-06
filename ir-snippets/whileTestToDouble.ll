@@ -26,6 +26,6 @@ ll.main.2.2.4:
  store i32 %ll.main.2.2.10, i32* %ll.main.1
  br label %ll.main.2.2.0
 ll.main.2.2.11:
- %ll.main.2.2.12 = load i32, i32* %ll.main.1
+ %ll.main.2.2.12 = load i32, i32* %ll.main.2.1
  ret i32 %ll.main.2.2.12
 }
