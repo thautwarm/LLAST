@@ -3,9 +3,21 @@ open LLVM.IR
 open LLVM.Infras
 open LLVM.Helper
 open LLVM.Exc
+open RBNF.AST
+open System.Diagnostics
 
 type 'v arraylist = System.Collections.Generic.List<'v>
 
+let rec visit (update:llvm->llvm) ast : llvm = 
+    fmap (visit update << update) ast 
+and fmap f ast = 
+    match ast with
+    | IfExp(ty,a,b,c) -> IfExp(ty, f a,f b,f c)
+    | Bin(op,a,b) -> Bin(op,f a,f b)
+    | App(a,xs) -> App(f a,List.map f xs)
+    | Let(s,a,b) -> Let(s,f a,f b) 
+    | Defun(n,a,ty,ll) -> Defun(n,a,ty,f ll)
+    | Switch(cond,cases,s) -> Switch(f cond,List.map (fun (ll,s) -> (f ll,s)) cases, s)
 let rec emit (types: type_table) (proc: ref<proc>) =
     let combine b =
         proc.contents <- Combine(proc.contents, b)
@@ -114,7 +126,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let value = emit' ctx value
             let count = ctx.count
             ctx.count <- ctx.count + 1
-            let ctx = ctx.into (fmt "%s$%d" name count)
+            let ctx = ctx.into (fmt "%d" count)
             ctx.local.[name] <- value
             emit' ctx body
         | Decl(name, arg_tys, ret_ty) ->

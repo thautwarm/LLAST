@@ -10,6 +10,7 @@
   <ItemGroup>
     
     <Compile Include="LLVM\IR.fs" />
+    <Compile Include="LLVM\IRPlus.fs" />
     <Compile Include="LLVM\Infras.fs" />
     <Compile Include="LLVM\Exc.fs" />
     <Compile Include="LLVM\Helper.fs" />
