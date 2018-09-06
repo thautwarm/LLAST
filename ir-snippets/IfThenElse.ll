@@ -10,15 +10,15 @@ define i32 @test3(i32 %.test3.arg1){
  %.test3.1.1.0 = load i1, i1* @.const.0
  %.test3.1.1.1 = load i1, i1* @.const.1
  %.test3.1.1.2 = icmp eq i1 %.test3.1.1.0, %.test3.1.1.1
- br i1 %.test3.1.1.2, label %.falselabel, label %.truelabel
-.truelabel:
+ br i1 %.test3.1.1.2, label %.cond.falselabel, label %.cond.truelabel
+.cond.truelabel:
  %.test3.1.1.3 = load i32, i32* @.const.2
  store i32 %.test3.1.1.3, i32 * %.test3.1.0
- br label %.endlabel
-.falselabel:
+ br label %.cond.endlabel
+.cond.falselabel:
  %.test3.1.1.4 = load i32, i32* @.const.3
  store i32 %.test3.1.1.4, i32 * %.test3.1.0
-.endlabel:
+.cond.endlabel:
  %.test3.1.1.5 = load i32, i32* %.test3.1.0
  %.test3.1.2 = load i32, i32* @.const.3
  %.test3.1.3 = icmp eq i32 %.test3.1.1.5, %.test3.1.2

@@ -9,7 +9,7 @@ open LLVM.IR
 type 'v arraylist = System.Collections.Generic.List<'v>
 
 let rec visit (ctx: context) (update:context->llvm->llvm) ast : llvm = 
-    fmap ctx (fun c -> visit c update << update c) ast 
+    update ctx <| fmap ctx (fun c -> visit c update) ast 
 and fmap ctx f ast = 
     let pctx (s: string) = f {ctx with prefix=ctx.prefix+s}
     match ast with
@@ -85,7 +85,7 @@ let elimIfElse ctx ast =
                     Load(Get(".result"))
                   ])
         | a -> a
-    ifte ctx <| visit ctx ifte ast
+    visit ctx ifte ast
     
 
 let rec emit (types: type_table) (proc: ref<proc>) =
