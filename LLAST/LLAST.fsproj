@@ -1,13 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp2.0</TargetFramework>
     <NoWarn>62</NoWarn>
-    
   </PropertyGroup>
-
   <ItemGroup>
+    
+    
     
     <Compile Include="LLVM\IR.fs" />
     <Compile Include="LLVM\Infras.fs" />
@@ -18,11 +17,11 @@
     <Compile Include="Core\ASDL.fs" />
     <Compile Include="Core\Machine.fs" />
     <Compile Include="Core\CodeGen.fs" />-->
-    <Compile Include="Entry.fs" />
+     <Compile Include="LLVM\Pass.fs" />
+     <Compile Include="Constructs\ControlFlow.fs" />
+     <Compile Include="Entry.fs" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="RBNF" Version="0.1.0" />
   </ItemGroup>
-
 </Project>

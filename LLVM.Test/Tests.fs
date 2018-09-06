@@ -2,11 +2,11 @@ module Tests
 
 open System
 open Xunit
-open LLVM.IR
-open LLVM.Emit
-open LLVM.Infras
-open LLVM.Helper
-open LLVM.Exc
+open LL.IR
+open LL.Emit
+open LL.Infras
+open LL.Helper
+open LL.Exc
 
 let test (title: string) (ir: llvm) =
     printf "============%s===============\n" title
@@ -68,7 +68,7 @@ let ``My test`` () =
 
     let iffalse = Suite([Mark "falselabel"; Store(Get "result", Const <| ID(32, 10L))])
 
-    let ifresult = Let("result", Alloca(I 32, None), Suite([branch; iftrue; iffalse; Load(Get "result")]))
+    let ifresult = Let("result", Alloca(I 32), Suite([branch; iftrue; iffalse; Load(Get "result")]))
 
     let ret = Suite([Return ifresult; Mark "tag"; Const(ID(32, 15L)) |> Return])
 
@@ -85,7 +85,7 @@ let ``My test`` () =
             I 64,
             ExtractVal(
                   Let("value",
-                      Alloca(Alias "master", None),
+                      Alloca(Alias "master"),
                       Load <| GEP(Get "value", Const <| ID(32, 0L), [])
                       ),
                   [3; 1])

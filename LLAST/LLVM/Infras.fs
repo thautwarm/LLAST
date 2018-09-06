@@ -1,5 +1,5 @@
-﻿module LLVM.Infras
-open LLVM.IR
+﻿module LL.Infras
+open LL.IR
 
 let fmt               = sprintf
 let inline to_str arg = fmt "%s" arg
