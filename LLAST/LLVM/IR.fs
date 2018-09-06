@@ -37,6 +37,19 @@ type ``type`` =
 | PendingTy of ``type`` undecided
 
 type llvm =
+| IfExp of ``type`` *  cond : llvm * thenBlock : llvm * elseBlock : llvm
+
+
+
+
+
+
+
+
+
+
+
+
 (** binary operations including comparisons *)
 | Bin         of binary_operation
 

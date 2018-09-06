@@ -1,4 +1,5 @@
 ﻿open LLVM.IR
+open LLVM.IRPlus
 open LLVM.Emit
 open LLVM.Infras
 open LLVM.Helper
@@ -12,7 +13,7 @@ let codegen (title: string) (llvm: llvm): unit =
     let emit' = emit <| type_table <| proc
     try
         emit' ctx <| llvm |> ignore
-        System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title,  proc.Value.to_ir)
+        System.IO.File.WriteAllText(fmt "../../../../ir-snippets/%s.ll" title,  proc.Value.to_ir)
     with LLException(exc) ->
         printf "%A" exc
 
@@ -66,7 +67,7 @@ let main args =
 
     let iffalse = Suite([Mark "falselabel"; Store(Get "result", Const <| ID(32, 10L))])
 
-    let ifresult = Let("result", 
+    let ifresult = Let("result",
                        Alloca(I 32, None), 
                        Suite(
                         [
@@ -80,6 +81,10 @@ let main args =
     let whole = Defun("test3", formal_args, ret_ty,
                       ret)
     codegen "jump" whole
+
+    let cond1 = IR <| Bin(Eq, Const (ID(1,1L)), Const (ID(1,0L)))
+    let then1 = (ID(32,123L))
+    let else1 = (ID(32,456L))
 
 
     let ty_def = DefTy("master", [I 1; I 8; F 32; Agg([I 32; I 64])])
