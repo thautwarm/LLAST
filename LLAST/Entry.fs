@@ -12,7 +12,7 @@ let codegen (title: string) (llvm: llvm): unit =
     let emit' = emit <| type_table <| proc
     try
         emit' ctx <| elimIfElse ctx llvm |> ignore
-        System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title,  proc.Value.to_ir)
+        System.IO.File.WriteAllText(fmt "../../../../ir-snippets/%s.ll" title,  proc.Value.to_ir)
     with LLException(exc) ->
         printf "%A" exc
 
