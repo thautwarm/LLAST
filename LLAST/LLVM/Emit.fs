@@ -13,15 +13,15 @@ let rec visit (ctx: context) (update:context -> llvm -> llvm) ast : llvm =
 and fmap ctx f ast =
     let pctx = f ctx
     match ast with
-    | IfExp(ty, cond, thenBlock, elseBlock) 
-        -> IfExp(ty, 
-            pctx ".cond" cond,
-            pctx ".then" thenBlock,
-            pctx ".else" elseBlock)
+    | IfExp(ty, cond, thenBlock, elseBlock)
+        -> IfExp(ty,
+            pctx cond,
+            pctx thenBlock,
+            pctx elseBlock)
     | WhileExp(cond,body)
         -> WhileExp(
-            pctx ".whileCond" cond,
-            pctx ".whileBody" body)
+            pctx cond,
+            pctx body)
     (**TODO: Add context transitioning for ALL other constructs*)
     | Bin(op,a,b)
         -> Bin(op,(f ctx) a, (f ctx) b)
@@ -68,51 +68,53 @@ and fmap ctx f ast =
 
     | a -> a
 
-let elimIfElse ctx ast =
-    let ifte ctx ast =
-        match ast with
-        | IfExp(ty, cond, thenBlock, elseBlock) ->
-            let truelabel = "truelabel"
-            let falselabel = "falselabel"
-            let endlabel = "endlabel"
-            Let(
-                ".result",
-                Alloca(ty, None),
-                Suite
-                  [
-                    Branch(cond, truelabel, falselabel)
-                    
-                    Mark truelabel
-                    Store(Get(".result"), thenBlock)
-                    Jump(endlabel)
-                    
-                    Mark(falselabel)
-                    Store(Get(".result"), elseBlock)
-                    Jump(endlabel)
+let elimIfElse ctx =
+    function
+    | IfExp(ty, cond, thenBlock, elseBlock) ->
+        let truelabel = "truelabel"
+        let falselabel = "falselabel"
+        let endlabel = "endlabel"
+        Let(
+            ".result",
+            Alloca(ty, None),
+            Suite
+                [
+                Branch(cond, truelabel, falselabel)
 
-                    Mark(endlabel)
-                    Load(Get(".result"))
-                  ])
-        | a -> a
-    visit ctx ifte ast
+                Mark truelabel
+                Store(Get(".result"), thenBlock)
+                Jump(endlabel)
 
-let elimWhile ctx ast = 
-    let whileExp ctx ast = 
-        match ast with
-        | WhileExp(cond, body) -> 
-            let beginLabel = ctx.prefix + ".beginWhile"
-            let beginBodyLabel = ctx.prefix + ".beginWhileBody"
-            let endlabel = ctx.prefix + ".endWhile"
-            Suite [
-                Mark(beginLabel)
-                Branch(cond, beginBodyLabel, endlabel)
-                Mark beginBodyLabel
-                body
-                Jump(beginLabel)
-                Mark endlabel
-            ]
-        | a -> a
-    visit ctx whileExp ast
+                Mark(falselabel)
+                Store(Get(".result"), elseBlock)
+                Jump(endlabel)
+
+                Mark(endlabel)
+                Load(Get(".result"))
+                ])
+    | a -> a
+
+
+let elimWhile ctx =
+    function
+    | WhileExp(cond, body) ->
+        let beginLabel = ctx.prefix + ".beginWhile"
+        let beginBodyLabel = ctx.prefix + ".beginWhileBody"
+        let endlabel = ctx.prefix + ".endWhile"
+        Suite [
+            Jump(beginLabel)
+
+            Mark(beginLabel)
+            Branch(cond, beginBodyLabel, endlabel)
+
+            Mark beginBodyLabel
+            body
+            Jump(beginLabel)
+
+            Mark endlabel
+        ]
+    | a -> a
+
 
 let rec emit (types: type_table) (proc: ref<proc>) =
     let combine b =
@@ -328,13 +330,13 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                  }
             ctx.local.[name] <- label
             label
-        | Branch(cond, iffalse, iftrue) ->
+        | Branch(cond, iftrue, iffalse) ->
             let cond = emit' ctx cond
             if cond.ty =||= I 1 |> not then UnexpectedUsage(dump_type cond.ty, "i1", "branch condition") |> ll_raise
             else
             let cond = dump_sym cond
             let pending_code() =
-               
+
                 let iffalse = dump_sym ctx.local.[iffalse]
                 let iftrue = dump_sym ctx.local.[iftrue]
                 let codestr = fmt "br %s, %s, %s" cond iftrue iffalse
@@ -344,7 +346,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
 
         | Jump(label) ->
             let pending_code() =
-                
+
                 //failwithf "\n%A %A\n" (join <| Seq.toList ctx.local.Keys) label
                 let codestr = fmt "br %s" <| dump_sym ctx.local.[label]
                 Ordered codestr
@@ -359,10 +361,10 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     let case = emit' ctx case |> dump_sym
                     fun () -> fmt "%s, %s" case <| dump_sym ctx.local.[label]
                 <| cases
-            
-            let pending_code() = 
+
+            let pending_code() =
                 let default' = dump_sym ctx.local.[default']
-                let label_pairs = 
+                let label_pairs =
                     List.map
                     <| fun lazy_get -> lazy_get()
                     <| label_pairs
