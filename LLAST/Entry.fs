@@ -21,7 +21,7 @@ let codegenPlus (title: string) (llvm: llvm): unit =
     let type_table = hashtable()
     let emit' = emit <| type_table <| proc
     try
-        emit' ctx <| elimIfElse ctx llvm |> ignore
+        emit' ctx <| (elimIfElse ctx <| (elimWhile ctx <| llvm)) |> ignore
         System.IO.File.WriteAllText(fmt "../../../../ir-snippets/%s.ll" title,  proc.Value.to_ir)
     with LLException(exc) ->
         printf "%A" exc
@@ -87,22 +87,48 @@ let main args =
 
     let ret = Suite([Return ifresult; Mark "tag"; Const(ID(32, 15L)) |> Return])
 
-    let whole = Defun("test3", formal_args, ret_ty,
+    let whole = Defun("ifelsetest", formal_args, ret_ty,
                       ret)
     codegen "jump" whole
 
-    let cond1 = Bin(Eq, Const (ID(1,1L)), Const (ID(1,0L)))
+    let formal_args = [("arg1", I 1)]
+    let cond1 = Bin(Eq, Const (ID(1,1L)), Get("arg1"))
     let then1 = Const<|ID(32,123L)
     let else1 = Const<|ID(32,456L)
     let cond2 = Bin(Eq,IfExp(I 32,cond1,then1,else1),else1)
     let then2 = Const<|ID(32,111L)
     let else2 = Const<|ID(32,222L)
-    let whole = Defun("test3", formal_args, ret_ty,
+    let whole = Defun("ifelsetest", formal_args, ret_ty,
                       IfExp(I 32,cond2,then2,else2))
     
-
     codegenPlus "IfThenElse" whole
 
+
+    let formal_args = [("arg1"),I 32]
+    let premire after = Let(
+        "b", 
+        Alloca(I 32, Some <| Const (ID(32,0L))), 
+        Let(
+            "a",
+            Alloca(I 32, Some <| Const (ID(32,0L))),
+            after))
+    let cond = Bin(Lt,Load(Get("a")),Get("arg1"))
+    let body = Suite [
+        Store(Get("a"),Bin(Add,Load(Get("a")),Const(ID(32,1L))))
+        Store(Get("b"),Bin(Add,Load(Get("b")),Const(ID(32,2L))))
+    ]
+    let funcBody = 
+        Return(
+            premire(
+                Suite[
+                    WhileExp(cond,body)
+                    Load(Get("b"))
+                ])
+    )
+    let whole = Defun("whileTest", formal_args, ret_ty, funcBody)
+    codegenPlus "whileTestToDouble" whole
+    
+    
 
     let ty_def = DefTy("master", [I 1; I 8; F 32; Agg([I 32; I 64])])
     let defun  =
