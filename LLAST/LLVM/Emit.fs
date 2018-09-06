@@ -1,23 +1,65 @@
 module LLVM.Emit
-open LLVM.IR
 open LLVM.Infras
 open LLVM.Helper
 open LLVM.Exc
 open RBNF.AST
 open System.Diagnostics
+open LLVM.IR
 
 type 'v arraylist = System.Collections.Generic.List<'v>
 
-let rec visit (update:llvm->llvm) ast : llvm = 
-    fmap (visit update << update) ast 
-and fmap f ast = 
+let rec visit ctx (update:context->llvm->llvm) ast : llvm = 
+    fmap ctx (visit ctx update << (update ctx)) ast 
+and fmap ctx f ast = 
     match ast with
-    | IfExp(ty,a,b,c) -> IfExp(ty, f a,f b,f c)
-    | Bin(op,a,b) -> Bin(op,f a,f b)
-    | App(a,xs) -> App(f a,List.map f xs)
-    | Let(s,a,b) -> Let(s,f a,f b) 
-    | Defun(n,a,ty,ll) -> Defun(n,a,ty,f ll)
-    | Switch(cond,cases,s) -> Switch(f cond,List.map (fun (ll,s) -> (f ll,s)) cases, s)
+    (**All the recursive contructs*)
+    | IfExp(ty,a,b,c) 
+        -> IfExp(ty, (f ctx)a,(f ctx)b,(f ctx)c)
+    | Bin(op,a,b) 
+        -> Bin(op,(f ctx)a,(f ctx)b)
+    | App(a,xs) 
+        -> App((f ctx)a,List.map (f ctx)xs)
+    | Let(s,a,b) 
+        -> Let(s,(f ctx)a,(f ctx)b) 
+    | Defun(n,a,ty,ll) 
+        -> Defun(n,a,ty,(f ctx)ll)
+    | Switch(cond,cases,s) 
+        -> LLVM.IR.Switch((f ctx)cond,List.map (fun (ll,s) -> ((f ctx)ll,s)) cases, s)
+    | IndrBr(cond,labels) 
+        -> IndrBr((f ctx)cond,labels)
+    | Return(a)
+        -> Return ((f ctx)a)
+    | Branch(cond,s,t) 
+        -> Branch((f ctx)cond,s,t)
+    | ZeroExt(a,t) 
+        -> ZeroExt((f ctx)a,t)
+    | CompatCast(a,t) 
+        -> CompatCast((f ctx)a,t)
+    | Bitcast(a,t) 
+        -> Bitcast((f ctx)a,t)
+    | Alloca (t,Some a) 
+        -> Alloca(t,Some((f ctx)a))
+    | Load(sub) 
+        -> Load((f ctx)sub)
+    | Store(a,b) 
+        -> Store((f ctx)a,(f ctx)b)
+    | GEP(a,b,offsets) 
+        -> GEP((f ctx)a,(f ctx)b,offsets)
+    | ExtractElem(a,b) 
+        -> ExtractElem(a,b)
+    | InsertElem(a,b,c) 
+        -> InsertElem((f ctx)a,(f ctx)b,(f ctx)c)
+    | ExtractVal(a,xs) 
+        -> ExtractVal((f ctx)a,xs)
+    | InsertVal(a,b,xs) 
+        -> InsertVal((f ctx)a,(f ctx)b,xs)
+    | Suite (xs) 
+        -> Suite(List.map (f ctx)xs)
+    | Locate(l,a) 
+        -> Locate(l, (f ctx)a)
+    
+    | a -> a
+
 let rec emit (types: type_table) (proc: ref<proc>) =
     let combine b =
         proc.contents <- Combine(proc.contents, b)
@@ -52,17 +94,17 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     function
                     | a, b when a =||= b -> ""
                     | Vec(n, l), Vec(n', r) when n = n' -> get_inst(l, r)
-                    | I _, F _   -> "sitofp"
-                    | F _, I _   -> "fptosi"
+                    | I _, (f ctx)_   -> "sitofp"
+                    | (f ctx)_, I _   -> "fptosi"
                     | Ptr _, I _ -> "ptrtoint"
                     | I _, Ptr _ -> "inttoptr"
                     | I a, I b when a > b -> "trunc"
                     | I a, I b when a < b -> "sext"
-                    | F a, F b when a > b -> "fptrunc"
-                    | F a, F b when a < b -> "fpext"
+                    | (f ctx)a, (f ctx)b when a > b -> "fptrunc"
+                    | (f ctx)a, (f ctx)b when a < b -> "fpext"
                     | _ -> InvalidUsage(fmt "%s -> %s" <| dump_type ty <| dump_type dest, "convert") |> ll_raise
                 in get_inst(ty, dest)
-            if inst = "" then sym
+            i(f ctx)inst = "" then sym
             else
             convert_routine inst sym dest
 
@@ -78,7 +120,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
         let store_llvm (ptr) ({ty = ty_of_data} as data) = 
             match ptr with
             | {ty=Ptr val_ty} ->
-                if val_ty <> ty_of_data then
+                i(f ctx)val_ty <> ty_of_data then
                     UnexpectedUsage(dump_type val_ty, dump_type ty_of_data, "`store` arg type") |> ll_raise
                 else
                 Ordered <| store' data ptr |> combine
@@ -98,7 +140,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let ty = match constant.ty with Ptr ty -> ty | _ -> failwith "Impossible"
             match ty with 
             | I _
-            | F _ -> 
+            | (f ctx)_ -> 
                
                load_llvm constant 
             | _  ->
@@ -130,7 +172,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             ctx.local.[name] <- value
             emit' ctx body
         | Decl(name, arg_tys, ret_ty) ->
-            if ctx.``global``.ContainsKey name then 
+            i(f ctx)ctx.``global``.ContainsKey name then 
                 UnexpectedUsage(fmt "declare %s" name, "declared once", "declaration") |> ll_raise
             else
             let func_ty = Func(arg_tys, ret_ty)
@@ -141,7 +183,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 <| actual_name name' true 
                 <| join (List.map dump_type arg_tys)
                 |> Ordered 
-                |> Predef 
+                |> Prede(f ctx)
                 |> combine
             void_symbol
 
@@ -170,7 +212,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     <| name
                     <| arg_string
                     |> Ordered
-                let inner_proc = ref Empty
+                let inner_proc = re(f ctx)Empty
                 let body =
                     emit types inner_proc ctx body
 
@@ -178,20 +220,20 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 | {ty=Terminator} -> ()
                 | _ as sym        ->
                     let ret_stmt = fmt "ret %s" <| dump_sym sym
-                    if sym.ty <> ret_ty then
-                        Message("function return type conflitcs with end of body") <*> type_mimatch(ret_ty, sym.ty) |> ll_raise
+                    i(f ctx)sym.ty <> ret_ty then
+                        Message("function return type conflitcs with end o(f ctx)body") <*> type_mimatch(ret_ty, sym.ty) |> ll_raise
                     else
                     inner_proc.contents <- Combine(inner_proc.contents, Ordered ret_stmt)
                 let endl = fmt "}" |> Ordered
                 let defun = Indent(inner_proc.Value)
                 let defun = Combine(defun, endl)
                 let defun = Combine(head, defun)
-                NoIndent <| Predef defun
+                NoIndent <| Prede(f ctx)defun
             combine <| Pending delay
             void_symbol
         | ZeroExt(src, dest) ->
             let sym = emit' ctx src
-            if is_int_ext(sym.ty, dest) then convert_routine "zext" sym dest
+            i(f ctx)is_int_ext(sym.ty, dest) then convert_routine "zext" sym dest
             else InvalidUsage(dump_type sym.ty, "zero extending") |> ll_raise
         | Bitcast(src, dest) ->
             let sym = emit' ctx src
@@ -223,7 +265,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             terminator
         | Branch(cond, iffalse, iftrue) ->
             let cond = emit' ctx cond
-            if cond.ty =||= I 1 |> not then UnexpectedUsage(dump_type cond.ty, "i1", "branch condition") |> ll_raise
+            i(f ctx)cond.ty =||= I 1 |> not then UnexpectedUsage(dump_type cond.ty, "i1", "branch condition") |> ll_raise
             else
             let cond = dump_sym cond
             let codestr = fmt "br %s, label %%%s, label %%%s" cond iftrue iffalse
@@ -247,13 +289,13 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let ty = Agg(ty_lst)
             types.[name] <- ty
             let defty = fmt "%%.struct.%s = type %s" name <| dump_type ty
-            Predef <| Ordered defty |> combine
+            Prede(f ctx)<| Ordered defty |> combine
             void_symbol
         | Bin(bin_op, lhs, rhs) as bin ->
             let {ty=lty; name = lname; is_glob=l_is_glob} = emit' ctx lhs
             let {ty=rty; name = rname; is_glob=r_is_glob} = emit' ctx rhs
             let ty =
-                if lty <> rty then
+                i(f ctx)lty <> rty then
                     Message(fmt "Invalid binary operation(%A)" bin_op)
                     <*>
                     type_mimatch(lty, rty)
@@ -264,15 +306,15 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 let rec get_inst_and_ret_ty =
                     function
                     | Add, (U _ | I _ as ty) -> "add", ty
-                    | Add, (F _ as ty) -> "fadd",ty
+                    | Add, ((f ctx)_ as ty) -> "fadd",ty
                     | Sub, (U _ | I _ as ty) -> "sub",ty
-                    | Sub, (F _ as ty) -> "fsub",ty
+                    | Sub, ((f ctx)_ as ty) -> "fsub",ty
                     | Mul, (U _ | I _ as ty) -> "mul",ty
-                    | Mul, (F _ as ty) -> "fmul",ty
+                    | Mul, ((f ctx)_ as ty) -> "fmul",ty
                     | Rem, (U _ | I _ as ty) -> "srem",ty
-                    | Rem, (F _ as ty) -> "frem",ty
+                    | Rem, ((f ctx)_ as ty) -> "frem",ty
                     | Div, (U _ | I _ as ty) -> "sdiv",ty
-                    | Div, (F _ as ty) -> "fdiv",ty
+                    | Div, ((f ctx)_ as ty) -> "fdiv",ty
 
                     | LSh, (U _ | I _ as ty) -> "shl",ty
                     | LShr,(U _ | I _ as ty) -> "lshr",ty
@@ -283,27 +325,27 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     // comparator
                     | Eq, U _
                     | Eq, I _ -> "icmp eq" , I 1
-                    | Eq, F _ -> "fcmp oeq", I 1
+                    | Eq, (f ctx)_ -> "fcmp oeq", I 1
                     
                     | Ne, U _
                     | Ne, I _ -> "icmp ne" , I 1
-                    | Ne, F _ -> "fcmp one", I 1
+                    | Ne, (f ctx)_ -> "fcmp one", I 1
                     
                     | Gt, U _ -> "icmp ugt", I 1
                     | Gt, I _ -> "icmp sgt", I 1
-                    | Gt, F _ -> "fcmp ogt", I 1
+                    | Gt, (f ctx)_ -> "fcmp ogt", I 1
 
                     | Ge, U _ -> "icmp uge", I 1
                     | Ge, I _ -> "icmp sge", I 1
-                    | Ge, F _ -> "fcmp oge", I 1
+                    | Ge, (f ctx)_ -> "fcmp oge", I 1
 
                     | Lt, U _ -> "icmp ult", I 1
                     | Lt, I _ -> "icmp slt", I 1
-                    | Lt, F _ -> "fcmp olt", I 1
+                    | Lt, (f ctx)_ -> "fcmp olt", I 1
                     
                     | Le, U _ -> "icmp ule", I 1
                     | Le, I _ -> "icmp sle", I 1
-                    | Le, F _ -> "fcmp ole", I 1
+                    | Le, (f ctx)_ -> "fcmp ole", I 1
                     | op, Vec(n, ty) ->
                         match get_inst_and_ret_ty(op, ty) with
                         | inst, ty -> inst, Vec(n, ty)
@@ -322,7 +364,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let args = List.map emit'' args
             match fn_ty with
             | Func(fn_arg_tys, fn_ret_ty) ->
-                if fn_arg_tys <> [for each in args -> each.ty]
+                i(f ctx)fn_arg_tys <> [for each in args -> each.ty]
                 then
                     Message("function input arg types mismatch")
                     <*>
@@ -358,7 +400,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
 
         | Alloca(ty, Some(data)) ->
             let data = emit' ctx data
-            if ty <> data.ty then
+            i(f ctx)ty <> data.ty then
                 Message("allocation")
                 <*>
                 type_mimatch(ty, data.ty)
@@ -411,7 +453,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             | {ty = Vec(_, ty)} ->
                 let val'    = emit'  ctx val'
                 let idx     = emit' ctx idx
-                if val'.ty =||= ty |> not then
+                i(f ctx)val'.ty =||= ty |> not then
                     Message("`insertelementptr` arg types mismatch") <*> type_mimatch(ty, val'.ty) |> ll_raise
                 let name, proc' = insertelem' subject val' idx |> assign_tmp ctx
                 combine proc'
