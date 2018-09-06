@@ -11,18 +11,8 @@ let codegen (title: string) (llvm: llvm): unit =
     let type_table = hashtable()
     let emit' = emit <| type_table <| proc
     try
-        emit' ctx <| llvm |> ignore
-        System.IO.File.WriteAllText(fmt "../../../../ir-snippets/%s.ll" title,  proc.Value.to_ir)
-    with LLException(exc) ->
-        printf "%A" exc
-let codegenPlus (title: string) (llvm: llvm): unit =
-    let ctx = context.init
-    let proc = ref Empty
-    let type_table = hashtable()
-    let emit' = emit <| type_table <| proc
-    try
         emit' ctx <| elimIfElse ctx llvm |> ignore
-        System.IO.File.WriteAllText(fmt "../../../../ir-snippets/%s.ll" title,  proc.Value.to_ir)
+        System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title,  proc.Value.to_ir)
     with LLException(exc) ->
         printf "%A" exc
 
@@ -70,11 +60,12 @@ let main args =
 
     let cond = Suite([BlockAddr("test3", "truelabel") |> Const 
                       Bin(Eq, Const <| ID(32, 10L), Get("arg1"))])
+
     let branch = Branch(cond, "truelabel", "falselabel")
 
     let iftrue = Suite([Mark "truelabel"; Jump "tag"])
 
-    let iffalse = Suite([Mark "falselabel"; Store(Get "result", Const <| ID(32, 10L))])
+    let iffalse = Suite([Mark "falselabel"; Store(Get "result", Const <| ID(32, 10L)); Jump("tag")])
 
     let ifresult = Let("result",
                        Alloca(I 32, None), 
@@ -82,26 +73,27 @@ let main args =
                         [
                         branch
                         iftrue 
-                        iffalse 
-                        Load(Get "result")]))
+                        iffalse
+                        Mark "tag"
+                        Load(Get "result")
+                        ]))
 
-    let ret = Suite([Return ifresult; Mark "tag"; Const(ID(32, 15L)) |> Return])
-
+    let ret = Return ifresult
     let whole = Defun("test3", formal_args, ret_ty,
                       ret)
     codegen "jump" whole
 
-    let cond1 = Bin(Eq, Const (ID(1,1L)), Const (ID(1,0L)))
-    let then1 = Const<|ID(32,123L)
-    let else1 = Const<|ID(32,456L)
-    let cond2 = Bin(Eq,IfExp(I 32,cond1,then1,else1),else1)
-    let then2 = Const<|ID(32,111L)
-    let else2 = Const<|ID(32,222L)
+    let cond1 = Bin(Eq, Const (ID(1, 1L)), Const (ID(1, 0L)))
+    let then1 = Const<|ID(32, 123L)
+    let else1 = Const<|ID(32, 456L)
+    let cond2 = Bin(Eq,IfExp(I 32, cond1, then1, else1), else1)
+    let then2 = Const<|ID(32, 111L)
+    let else2 = Const<|ID(32, 222L)
     let whole = Defun("test3", formal_args, ret_ty,
-                      IfExp(I 32,cond2,then2,else2))
+                      IfExp(I 32, cond2, then2, else2))
     
 
-    codegenPlus "IfThenElse" whole
+    codegen "IfThenElse" whole
 
 
     let ty_def = DefTy("master", [I 1; I 8; F 32; Agg([I 32; I 64])])
