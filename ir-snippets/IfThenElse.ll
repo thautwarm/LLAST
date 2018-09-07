@@ -1,9 +1,9 @@
- @.const.0 = private unnamed_addr constant i1 1, align 1
- @.const.1 = private unnamed_addr constant i1 0, align 1
- @.const.2 = private unnamed_addr constant i32 123, align 4
- @.const.3 = private unnamed_addr constant i32 456, align 4
- @.const.4 = private unnamed_addr constant i32 111, align 4
- @.const.5 = private unnamed_addr constant i32 222, align 4
+@.const.0 = private unnamed_addr constant i1 1, align 1
+@.const.1 = private unnamed_addr constant i1 0, align 1
+@.const.2 = private unnamed_addr constant i32 123, align 4
+@.const.3 = private unnamed_addr constant i32 456, align 4
+@.const.4 = private unnamed_addr constant i32 111, align 4
+@.const.5 = private unnamed_addr constant i32 222, align 4
 define i32 @main(i32 %ll.main.arg1){
  %ll.main.0 = alloca i32, align 4
  %ll.main.1.0 = alloca i32, align 4

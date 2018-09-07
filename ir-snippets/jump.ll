@@ -1,6 +1,6 @@
- @.const.0 = private unnamed_addr constant i8* blockaddress(@main, %ll.main.1.5), align 8
- declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i32, i1)
- @.const.1 = private unnamed_addr constant i32 10, align 4
+@.const.0 = private unnamed_addr constant i8* blockaddress(@main, %ll.main.1.5), align 8
+declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i32, i1)
+@.const.1 = private unnamed_addr constant i32 10, align 4
 define i32 @main(i32 %ll.main.arg1){
  %ll.main.0 = alloca i32, align 4
  %ll.main.1.0 = alloca i8*, align 8

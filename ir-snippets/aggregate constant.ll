@@ -1,5 +1,5 @@
- @.const.0 = private unnamed_addr constant { i32, i8 } { i32 10, i8 10 }, align 4
- declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i32, i1)
+@.const.0 = private unnamed_addr constant { i32, i8 } { i32 10, i8 10 }, align 4
+declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i32, i1)
 %.struct.redyred = type { i32, i8 }
 define i32 @main(){
  %ll.main.0 = alloca { i32, i8 }, align 4
