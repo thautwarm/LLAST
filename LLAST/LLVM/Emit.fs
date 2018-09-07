@@ -82,7 +82,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             | Empty ->
                 ()
             | _     ->
-                combine proc'
+                combine <| NoIndent proc'
             let ty = match constant.ty with Ptr ty -> ty | _ -> failwith "Impossible"
             match ty with
             | I _
@@ -129,29 +129,54 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 <| actual_name name' true
                 <| join (List.map dump_type arg_tys)
                 |> Ordered
+                |> NoIndent
                 |> Predef
                 |> combine
             void_symbol
 
-        | Defun(name, args, ret_ty, body) ->
-            let ctx = ctx.into name
+        | (Defun(_, args, ret_ty, body) | Lambda(args, ret_ty, body)) as it ->
             let arg_names, arg_tys = List.unzip args
             let func_ty = Func(arg_tys, ret_ty)
-            ctx.``global``.[name] <- {ty=func_ty; name=Some name; ty_tb = types; is_glob=true}
+            let name, sym =
+                match it with
+                | Defun(name, _, _, _) ->
+                    let sym = {ty=func_ty; name=Some name; ty_tb = types; is_glob=true}
+                    ctx.``global``.[name] <- sym
+                    name, sym
+                | Lambda _ ->
+                    let name = ctx.alloc_name
+                    name,
+                    {ty=func_ty; name=Some name; ty_tb = types; is_glob=true}
+                | _ -> failwith "impossible"
             let delay = fun () ->
+                let prefix = ctx.wrap_name name
                 let arg_syms =
                     List.map
-                    <| fun (arg, ty) -> {ty = ty; name=Some <| ctx.wrap_name arg; ty_tb = types; is_glob=false}
+                    <| fun (arg, ty) ->
+                        {
+                            ty  = ty
+                            name = Some <| concat prefix arg
+                            ty_tb = types
+                            is_glob =false
+                        }
                     <| args
 
-                let rec update_map = function
-                    | [] -> ()
-                    | (arg_name, arg_sym) :: tail ->
-                    ctx.bind arg_name arg_sym
-                    update_map tail
-                in update_map <| List.zip arg_names arg_syms
-                let arg_string = List.map dump_sym arg_syms |> join
+                let local_vars = hashtable()
 
+                for each in ctx.local do
+                    let key = each.Key
+                    let value = each.Value
+                    match value.ty with
+                    | Func _ ->
+                        local_vars.Add(key, value)
+                    | _ -> ()
+
+                List.zip arg_names arg_syms
+                |>
+                List.iter (fun (a, b) -> local_vars.Add(a, b))
+
+                let ctx = ctx.new_from prefix local_vars
+                let arg_string = List.map dump_sym arg_syms |> join
                 let head =
                     fmt "define %s @%s(%s){"
                     <| dump_type ret_ty
@@ -176,7 +201,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 let defun = Combine(head, defun)
                 NoIndent <| Predef defun
             combine <| Pending delay
-            void_symbol
+            sym
         | ZeroExt(src, dest) ->
             let sym = emit' ctx src
             if is_int_ext(sym.ty, dest) then convert_routine "zext" sym dest

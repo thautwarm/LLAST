@@ -8,6 +8,7 @@
     
     
     
+    
     <Compile Include="LLVM\IR.fs" />
     <Compile Include="LLVM\Infras.fs" />
     <Compile Include="LLVM\Exc.fs" />
@@ -19,9 +20,10 @@
     <Compile Include="Core\CodeGen.fs" />-->
      <Compile Include="LLVM\Pass.fs" />
      <Compile Include="Constructs\ControlFlow.fs" />
+     <Compile Include="FrontEnd\Lisp.fs" />
      <Compile Include="Entry.fs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="RBNF" Version="0.1.0" />
+    <PackageReference Include="FastParse" Version="0.2.0" />
   </ItemGroup>
 </Project>

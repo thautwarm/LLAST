@@ -44,6 +44,9 @@ type context with
     member this.into name =
         {this with count = 0; prefix = concat this.prefix name; local = hashtable(this.local)}
 
+    member this.new_from name local_vars =
+        {this with count = 0; prefix = name; local = local_vars}
+
     member ctx.wrap_name name : string =
         concat ctx.prefix name
 
@@ -130,7 +133,7 @@ let inline get_align (ty_tb: type_table) ty : int =
     | otherwise -> otherwise
 
 let inline get_size_and_align(ty_tb: type_table) ty : int64 * int64 =
-    let rec get_size (recur_set: string Set) = 
+    let rec get_size (recur_set: string Set) =
         function
         | PendingTy id -> NotDecidedYet id |> ll_raise
         | Void         -> InvalidUsage("type void", "sizeof") |> ll_raise
@@ -149,8 +152,8 @@ let inline get_size_and_align(ty_tb: type_table) ty : int64 * int64 =
         | _  as it    -> InvalidUsage(dump_type it, "get_align") |> ll_raise
     in
     let align = get_align ty_tb ty
-    let total = get_size (set[]) <| ty |> decimal 
-    in  
+    let total = get_size (set[]) <| ty |> decimal
+    in
     let chunk_num = System.Math.Ceiling(total / decimal align) |> System.Convert.ToInt64
     let align = System.Convert.ToInt64 align
     chunk_num * align, align
@@ -187,7 +190,7 @@ let inline gep' ptr' idx offsets =
     match ptr'.ty with
     | Ptr val_ty ->
     let val_ty = dump_type val_ty
-    if List.isEmpty offsets then 
+    if List.isEmpty offsets then
         fmt "getelementptr inbounds %s, %s, %s" <| val_ty <| dump_sym ptr' <| idx
     else fmt "getelementptr inbounds %s, %s, %s, %s"
               val_ty <| dump_sym ptr' <| idx <| join (List.map (fmt "i32 %d") offsets)
@@ -214,14 +217,14 @@ let inline insertval' agg' elt' offsets =
         <| dump_sym agg'
         <| dump_sym elt'
         <| join (List.map (fmt "%d") offsets)
-    
+
 let private (%%) ty str =
     ty, fun ctx -> fmt "%s %s" <| dump_type ty <| str
 
 let private (%>) ty fn =
     ty, fun ctx -> fmt "%s %s" <| dump_type ty <| fn(ctx)
 
-let rec typed_data: constant -> (``type`` * (context -> string)) = 
+let rec typed_data: constant -> (``type`` * (context -> string)) =
     function
     | PendingConst id -> NotDecidedYet(id) |> ll_raise
     | UD(bit, value)  -> U bit %% fmt "%u" value
@@ -235,7 +238,7 @@ let rec typed_data: constant -> (``type`` * (context -> string)) =
         | [ty] ->
             Arr(length, ty)
             %>
-            fun ctx -> 
+            fun ctx ->
                 let eval = fun it -> it(ctx)
                 (fmt "[ %s ]" <| join (List.map eval data_lst))
         | a :: b :: _ -> type_mimatch(a, b) |> ll_raise
@@ -248,7 +251,7 @@ let rec typed_data: constant -> (``type`` * (context -> string)) =
         | [ty] ->
             Vec(length, ty)
             %>
-            fun ctx -> 
+            fun ctx ->
                 let eval = fun it -> it(ctx)
                 (fmt "< %s >" <| join (List.map eval data_lst))
         | a :: b :: _ -> type_mimatch(a, b) |> ll_raise
@@ -258,7 +261,7 @@ let rec typed_data: constant -> (``type`` * (context -> string)) =
         let agg_ty = Agg(type_lst)
         agg_ty
         %>
-        fun ctx -> 
+        fun ctx ->
             let eval = fun it -> it(ctx)
             (fmt "{ %s }" <| join (List.map eval data_lst))
 
@@ -286,10 +289,10 @@ let rec find_ty (types: type_table) offsets agg_ty =
         | Vec(n, ty) ->
             if n < offset then find_ty offsets ty
             else
-            UnexpectedUsage(fmt "index %d" offset, 
-                            fmt "index n, n < %d" n, 
-                            fmt "Index on type %s" 
-                            <| dump_type agg_ty) 
+            UnexpectedUsage(fmt "index %d" offset,
+                            fmt "index n, n < %d" n,
+                            fmt "Index on type %s"
+                            <| dump_type agg_ty)
             |> ll_raise
         | Alias(name) ->
             find_ty (offset :: offsets) <| types.[name]
@@ -303,7 +306,7 @@ let type_eq =
     | Alias name1, Alias name2 -> name1 = name2
     | a, b -> a = b
 
-let get_constant (types: type_table) (ctx: context) (constant: constant) = 
+let get_constant (types: type_table) (ctx: context) (constant: constant) =
     let ref = ref <| void_symbol
     match ctx.consts.TryGetValue(constant, ref) with
     | true  -> ref.Value, Empty
@@ -314,11 +317,11 @@ let get_constant (types: type_table) (ctx: context) (constant: constant) =
     ctx.consts.[constant] <- sym
 
     let pending_code() =
-        fmt "@%s = private unnamed_addr constant %s, align %d" name 
-        <| code_str_getter(ctx) 
-        <| get_align types ty 
+        fmt "@%s = private unnamed_addr constant %s, align %d" name
+        <| code_str_getter(ctx)
+        <| get_align types ty
         |> Ordered
     sym,
     Pending <| pending_code |> Predef
-        
+
 let inline (=||=) a b = type_eq(a, b)

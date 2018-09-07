@@ -1,4 +1,4 @@
- @.const.0 = private unnamed_addr constant float 10.000000, align 4
+@.const.0 = private unnamed_addr constant float 10.000000, align 4
 define i64 @main(i32 %ll.main.arg1){
  %ll.main.0 = call float @test1(i32 %ll.main.arg1)
  %ll.main.1 = fptosi float %ll.main.0 to i64

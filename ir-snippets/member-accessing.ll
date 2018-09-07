@@ -1,4 +1,4 @@
- @.const.0 = private unnamed_addr constant i32 0, align 4
+@.const.0 = private unnamed_addr constant i32 0, align 4
 %.struct.master = type { i1, i8, float, { i32, i64 } }
 define i64 @main(){
  %ll.main.0 = alloca %.struct.master, align 8

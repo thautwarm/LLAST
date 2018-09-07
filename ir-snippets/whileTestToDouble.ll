@@ -1,7 +1,7 @@
- @.const.0 = private unnamed_addr constant i32 0, align 4
- @.const.1 = private unnamed_addr constant i32 123, align 4
- @.const.2 = private unnamed_addr constant i32 1, align 4
- @.const.3 = private unnamed_addr constant i32 2, align 4
+@.const.0 = private unnamed_addr constant i32 0, align 4
+@.const.1 = private unnamed_addr constant i32 123, align 4
+@.const.2 = private unnamed_addr constant i32 1, align 4
+@.const.3 = private unnamed_addr constant i32 2, align 4
 define i32 @main(){
  %ll.main.0 = load i32, i32* @.const.0
  %ll.main.1 = alloca i32, align 4

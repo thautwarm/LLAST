@@ -18,9 +18,8 @@ let codegen (title : string) (llvm : llvm) : unit =
         emit' ctx <| visit ctx (fun ctx -> elimIfElse ctx >> elimWhile ctx) llvm |> ignore
         System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title, proc.Value.to_ir)
     with LLException(exc) ->
-        match exc with
-        | NameNotFound(name, ctx) -> printfn "%s \n %A" name ctx
-        | _ -> failwithf "%A" exc
+        printfn "test %s failed" title
+        printfn "%A" exc
 
 [<EntryPoint>]
 let main args =
@@ -29,7 +28,7 @@ let main args =
     let body = Bin(Add, Get "arg1", Get "arg1")
     let defun = Defun("main", formal_args, ret_ty, body)
     codegen "simple-defun" defun
-    
+
     let formal_args = [ ("arg1", I 32) ]
     let ret_ty = F 32
     let body = CompatCast(Bin(Add, Get "arg1", Get "arg1"), F 32)
@@ -124,4 +123,20 @@ let main args =
                                   ID(8, 10L) ]), ExtractVal(Get("c"), [ 0 ])))
 
     codegen "aggregate-constant" <| Suite [ ty_def; defun ]
+    
+    let defun =
+        Defun(
+            "main", 
+            [], 
+            I 32,
+            Let("c",
+                Lambda(
+                    [("e", I 32)], 
+                    I 32,
+                    Bin(Add, Get("e"), Const <| ID(32, 1L)))
+                  ,
+                  App(Get("c"), [Const <| ID(32, 2L)])))
+
+    codegen "lambda" <| Suite [ ty_def; defun ]
+
     0

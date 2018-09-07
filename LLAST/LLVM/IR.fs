@@ -59,6 +59,7 @@ type llvm =
 | Let         of name: string * value: llvm * body: llvm
 
 (** define function **)
+| Lambda      of args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
 | Defun       of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
 
 | Decl        of name: string * arg_tys: ``type`` list * ret_ty: ``type``
