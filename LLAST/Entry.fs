@@ -126,12 +126,12 @@ let main args =
 
     let defun =
         Defun(
-            "main", 
-            [], 
+            "main",
+            [],
             I 32,
             Let("c",
                 Lambda(
-                    [("e", I 32)], 
+                    [("e", I 32)],
                     I 32,
                     Bin(Add, Get("e"), Const <| ID(32, 1L)))
                   ,
@@ -139,27 +139,27 @@ let main args =
 
     codegen "lambda" <| Suite [ ty_def; defun ]
 
-    let if_exp = 
+    let if_exp =
          IfExp(
             Func([I 32], I 32),
-            Bin(Eq, Const <| ID (32, 1L), Const <| ID (32, 1L)), 
+            Bin(Eq, Const <| ID (32, 1L), Const <| ID (32, 1L)),
             Lambda(
-                 [("e", I 32)], 
+                 [("e", I 32)],
                   I 32,
                   Bin(Add, Get("e"), Const <| ID(32, 1L))),
-            
+
             Lambda(
-                 [("e", I 32)], 
+                 [("e", I 32)],
                   I 32,
                   Bin(Add, Get("e"), Const <| ID(32, 2L))))
-                
+
     let defun =
         Defun(
-            "main", 
-            [], 
+            "main",
+            [],
             I 32,
             Let("c",
-                  if_exp   
+                  if_exp
                   ,
                   App(Get("c"), [Const <| ID(32, 2L)])))
 
