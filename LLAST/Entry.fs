@@ -123,5 +123,5 @@ let main args =
                   Const <| AggD([ ID(32, 10L)
                                   ID(8, 10L) ]), ExtractVal(Get("c"), [ 0 ])))
 
-    codegen "aggregate constant" <| Suite [ ty_def; defun ]
+    codegen "aggregate-constant" <| Suite [ ty_def; defun ]
     0
