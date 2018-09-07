@@ -381,7 +381,6 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     let codestr = fmt "call void %s(%s)" (actual_name fn_name is_glob) arg_string
                     combine <| Ordered codestr
                     void_symbol
-
                 | _    ->
                 let codestr = fmt "call %s %s(%s)" <| dump_type fn_ret_ty <| (actual_name fn_name is_glob) <| arg_string
                 let name, proc' = assign_tmp ctx codestr

@@ -139,4 +139,29 @@ let main args =
 
     codegen "lambda" <| Suite [ ty_def; defun ]
 
+    let if_exp = 
+         IfExp(
+            Func([I 32], I 32),
+            Bin(Eq, Const <| ID (32, 1L), Const <| ID (32, 1L)), 
+            Lambda(
+                 [("e", I 32)], 
+                  I 32,
+                  Bin(Add, Get("e"), Const <| ID(32, 1L))),
+            
+            Lambda(
+                 [("e", I 32)], 
+                  I 32,
+                  Bin(Add, Get("e"), Const <| ID(32, 2L))))
+                
+    let defun =
+        Defun(
+            "main", 
+            [], 
+            I 32,
+            Let("c",
+                  if_exp   
+                  ,
+                  App(Get("c"), [Const <| ID(32, 2L)])))
+
+    codegen "load function pointer" <| Suite [defun]
     0
