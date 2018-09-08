@@ -4,7 +4,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "run WhileTest",
+            "label": "run Tests",
             "type": "shell",
             "command": "rm ../ir-snippets/*;dotnet run;wsl ./test.sh ", //'lli ../ir-snippets/WhileTestToDouble.ll;echo $?;logout;'
             "problemMatcher": []

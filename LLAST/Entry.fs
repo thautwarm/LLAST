@@ -163,5 +163,5 @@ let main args =
                   ,
                   App(Get("c"), [Const <| ID(32, 2L)])))
 
-    codegen "load function pointer" <| Suite [defun]
+    codegen "load-function-pointer" <| Suite [defun]
     0
