@@ -166,6 +166,7 @@ let main args =
                   App(Get("c"), [Const <| ID(32, 2L)])))
 
     codegen "load-function-pointer" <| Suite [defun]
-    Parser.parse ty_literal <| lex "(i32 i32 (i32 custom_ty))"
+    
+    (Parser.parse ty_literal << lex) "(i32 i32 (i32 custom_ty))"
     |> printfn "%A"
     0
