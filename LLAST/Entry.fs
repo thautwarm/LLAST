@@ -167,6 +167,9 @@ let main args =
 
     codegen "load-function-pointer" <| Suite [defun]
     
-    (Parser.parse ty_literal << lex) "(i32 i32 (i32 custom_ty))"
+    (Parser.parse llvm << lex) "[(defty struct_name [i32 i32 [i32 custom_ty]])
+                                 (defty struct_2    [i32 [i32 custom_ty]])
+                                ]
+                                "
     |> printfn "%A"
     0
