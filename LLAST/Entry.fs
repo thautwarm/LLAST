@@ -79,10 +79,10 @@ let main args =
     let cond1 = Bin(Eq, Const(ID(1, 1L)), Const(ID(1, 0L)))
     let then1 = Const <| ID(32, 123L)
     let else1 = Const <| ID(32, 456L)
-    let cond2 = Bin(Eq, IfExp(I 32, cond1, then1, else1), else1)
+    let cond2 = Bin(Eq, IfExp(cond1, then1, else1), else1)
     let then2 = Const <| ID(32, 111L)
     let else2 = Const <| ID(32, 222L)
-    let whole = Defun("main", formal_args, ret_ty, IfExp(I 32, cond2, then2, else2))
+    let whole = Defun("main", formal_args, ret_ty, IfExp(cond2, then2, else2))
     codegen "IfThenElse" whole
     let formal_args = []
     let premire after =
@@ -143,7 +143,6 @@ let main args =
 
     let if_exp =
          IfExp(
-            Func([I 32], I 32),
             Bin(Eq, Const <| ID (32, 1L), Const <| ID (32, 1L)),
             Lambda(
                  [("e", I 32)],

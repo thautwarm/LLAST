@@ -3,6 +3,33 @@ open LL.IR
 open LL.Infras
 open LL.Exc
 
+type proc with
+    member this.to_ir =
+        let dump_code_lst = List.rev >> (String.concat "\n")
+        let rec to_ir (n: int) (ordered: string list) (predef: string list) =
+            function
+            | Ordered it -> ((String.replicate n " ") + it) :: ordered, predef
+            | Pending it -> to_ir n ordered predef <| it()
+            | Predef  it ->
+                let ordered', predef' = to_ir n [] [] it
+                let predef =
+                    if List.isEmpty predef' then predef
+                    else List.append predef predef'
+                ordered, List.append ordered' predef
+            | Combine(l, r) ->
+                let ordered, predef = to_ir n ordered predef l
+                to_ir n ordered predef r
+            | NoIndent p ->
+                to_ir 0 ordered predef p
+            | Indent   p ->
+                to_ir <| n + 1 <| ordered <| predef <| p
+            | Empty      ->
+                ordered, predef
+        let ordered, predef = to_ir 0 [] [] this
+        fmt "%s\n%s"
+        <| dump_code_lst predef
+        <| dump_code_lst ordered
+
 let (|>>) (a : 'a option) (f: 'a -> 'b) : 'b =
     match a with
     | None    -> NullExc <| typeof<'a> |> ll_raise
@@ -325,3 +352,4 @@ let get_constant (types: type_table) (ctx: context) (constant: constant) =
     Pending <| pending_code |> Predef
 
 let inline (=||=) a b = type_eq(a, b)
+let inline pending (f: (unit -> ^a)) = (^a: (static member pending: (unit -> ^a) -> ^a) (f))
