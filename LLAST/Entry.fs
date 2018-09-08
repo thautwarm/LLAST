@@ -8,6 +8,8 @@ open LL.Infras
 open LL.Pass
 open LL.ControlFlow
 open System.IO
+open LL.Lisp
+open FastParse
 
 let codegen (title : string) (llvm : llvm) : unit =
     let ctx = context.init
@@ -164,4 +166,6 @@ let main args =
                   App(Get("c"), [Const <| ID(32, 2L)])))
 
     codegen "load-function-pointer" <| Suite [defun]
+    Parser.parse ty_literal <| lex "(i32 i32 (i32 custom_ty))"
+    |> printfn "%A"
     0

@@ -6,7 +6,7 @@ open FastParse.Lexer
 open FastParse.Parser
 let lexerTB = 
     [
-        R "term" "[^\(\)\s]"
+        R "term" "[^\(\)\s]+"
         C "paren" ["("; ")"]
         R "space" "\s+"
     ]
@@ -33,9 +33,17 @@ let r = token_by_value ")"
 
 let id e = e
 
-let rec ty = 
+let rec ty_literal = 
+    let ty_literal_lst tokens = 
+        rep 
+        <| ty_literal
+        <| 1 
+        <| -1
+        <| id
+        <| tokens
+
     let pa = 
-        between l ty_lst r
+        between l ty_literal_lst r
         |> trans 
         <| fun it -> IR.Agg it 
     let pb = trans term <| fun token ->
@@ -43,12 +51,15 @@ let rec ty =
          | "i32" -> IR.I 32
          | it    -> IR.Alias it
     either pa pb
-and ty_lst = 
-    rep 
-    <| ty
-    <| 1 
-    <| -1
-    <| id
+
+let lex text = 
+   
+    let tokens = lex <| Some castMap <| lexerTB <| {filename = ""; text = text}
+    Seq.filter
+    <| fun (it: token) -> it.name <> "space"
+    <| tokens
+    |> fun it -> {arr = Array.ofSeq it; offset = 0}
+    
 
 
 
