@@ -76,7 +76,7 @@ let rec dump_type: ``type`` -> string =
     | Alias name      -> fmt "%%.struct.%s" name
     | Ptr ty          -> fmt "%s*" <| dump_type ty
     | Func(args, ret) ->
-        fmt "%s (%s)" <| dump_type ret <| join (List.map dump_type args)
+        fmt "%s (%s)*" <| dump_type ret <| join (List.map dump_type args)
     | Void            -> "void"
     | Label           -> "label"
     | _ as it         -> failwithf "Type %A cannot be dumped." it
