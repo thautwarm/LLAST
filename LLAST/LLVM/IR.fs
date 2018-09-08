@@ -41,10 +41,13 @@ type ``type`` =
 
 type llvm =
 (** NOT EMMITABLE BEGINS*)
-
 (** control flow constructs*)
 | IfExp of llvm * thenBlock : llvm * elseBlock : llvm
 | WhileExp of cond : llvm * body : llvm
+(** compiler services*)
+| Emitted     of symbol * proc
+| Monitor     of (symbol * proc-> unit) * llvm
+| Rewrite     of llvm array * ((symbol * proc) array -> llvm)
 (** NOT EMMITABLE ENDS*)
 
 
@@ -109,9 +112,6 @@ including: load, store, alloca, getelementptr
 (** others *)
 | Suite       of llvm list
 | Locate      of location * llvm
-| Emitted     of symbol * proc
-| Monitor     of (symbol * proc-> unit) * llvm
-| Rewrite     of llvm array * ((symbol * proc) array -> llvm)
 | Undecided   of (unit -> llvm)
 with static member pending f = Undecided f
 (**
