@@ -1,0 +1,1 @@
+dos2unix < test.sh > a; cat a > test.sh; rm a
