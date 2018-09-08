@@ -97,7 +97,7 @@ including: load, store, alloca, getelementptr
             insertelement
 *)
 | Alloca      of ``type``
-| AllocaTo    of ``type`` * unmangled_name : string
+| AllocaTo    of uninitilized_sym : symbol
 | Load        of subject: llvm
 | Store       of subject: llvm * data: llvm
 | GEP         of subject: llvm * idx : llvm * offsets: int list
@@ -109,8 +109,9 @@ including: load, store, alloca, getelementptr
 (** others *)
 | Suite       of llvm list
 | Locate      of location * llvm
-| Emitted     of symbol
-| Monitor     of (symbol -> unit) * llvm
+| Emitted     of symbol * proc
+| Monitor     of (symbol * proc-> unit) * llvm
+| Rewrite     of llvm array * ((symbol * proc) array -> llvm)
 | Undecided   of (unit -> llvm)
 with static member pending f = Undecided f
 (**
@@ -171,7 +172,7 @@ and context = {
     prefix          : string (** for context mangling usage *)
 }
 
-type proc =
+and proc =
     | Ordered   of string
     | Predef    of proc
     | Combine   of proc * proc
@@ -183,3 +184,5 @@ type proc =
 
 
 let inline (@) (llvm: llvm) (location: location) = Locate(location, llvm)
+
+let rewrite a b = Rewrite(a, b)

@@ -13,12 +13,11 @@ open FastParse
 
 let codegen (title : string) (llvm : llvm) : unit =
     let ctx = context.init
-    let proc = ref Empty
     let type_table = hashtable()
-    let emit' = emit <| type_table <| proc
+    let emit' = emit <| type_table
     try
-        emit' ctx <| visit ctx (fun ctx -> elimIfElse ctx >> elimWhile ctx) llvm |> ignore
-        System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title, proc.Value.to_ir)
+    let _, proc = emit' ctx <| visit ctx (fun ctx -> elimIfElse ctx >> elimWhile ctx) llvm
+    System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title, proc.to_ir)
     with LLException(exc) ->
         printfn "test %s failed" title
         printfn "%A" exc

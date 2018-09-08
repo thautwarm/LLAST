@@ -345,7 +345,7 @@ let get_constant (types: type_table) (ctx: context) (constant: constant) =
 
     let pending_code() =
         fmt "@%s = private unnamed_addr constant %s, align %d" name
-        <| code_str_getter(ctx)
+        <| code_str_getter ctx
         <| get_align types ty
         |> Ordered
     sym,
