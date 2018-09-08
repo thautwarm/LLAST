@@ -2,7 +2,6 @@ module LL.Emit
 open LL.Infras
 open LL.Helper
 open LL.Exc
-open System.Diagnostics
 open LL.IR
 
 type 'v arraylist = System.Collections.Generic.List<'v>
@@ -10,7 +9,6 @@ type 'v arraylist = System.Collections.Generic.List<'v>
 let rec emit (types: type_table) (proc: ref<proc>) =
     let combine b =
         proc.contents <- Combine(proc.contents, b)
-
     let rec emit' (ctx: context): (llvm -> symbol)  =
 
         let assign_tmp (ctx: context) codestr =
@@ -75,7 +73,14 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             | {ty=ty} -> UnexpectedUsage("Pointer type", dump_type ty, "`store` arg type") |> ll_raise
 
         function
-        | PendingLLVM _ as id -> NotDecidedYet(id) |> ll_raise
+        | Undecided f ->
+            let sym = {name = Some <| ctx.alloc_name; ty = Terminator; ty_tb = types; is_glob = false}
+            let pending_code() =
+                let inner_proc = ref Empty
+                emit types inner_proc ctx <| f() |> ignore
+                inner_proc.Value
+            combine <| pending pending_code
+            sym
         | Const constant ->
             let constant, proc' = get_constant types ctx constant
             match proc' with
@@ -400,12 +405,15 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             in loop suite
 
         | Alloca(ty) ->
-
             let ptr = {ty=Ptr ty; name = Some <| ctx.alloc_name; ty_tb=types; is_glob=false}
             let codestr = alloca' ptr
             combine <| Ordered codestr
             ptr
-
+        | AllocaTo(ty, unmangled_name) ->
+            let ptr = {ty=Ptr ty; name = Some <| unmangled_name; ty_tb=types; is_glob=false}
+            let codestr = alloca' ptr
+            combine <| Ordered codestr
+            ptr
         | Load subject ->
             load_llvm <| emit' ctx subject
 
@@ -426,6 +434,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 {name=Some name; ty = ret_ty; is_glob=false; ty_tb=types}
             | {ty=ty} ->
             InvalidUsage(dump_type ty, "`getlementptr` arg type") |> ll_raise
+
         | ExtractElem(subject, idx) ->
             let subject = emit' ctx subject
             let idx     = emit' ctx idx
@@ -436,6 +445,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 {ty=ty; name = Some name; ty_tb=types; is_glob = false}
             | {ty=ty} ->
             InvalidUsage(dump_type ty, "`extractelement` arg type") |> ll_raise
+
         | InsertElem(subject, val', idx) ->
             let subject = emit' ctx subject
             match subject with
@@ -465,6 +475,11 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             combine proc'
             {ty = ty; name = Some name; ty_tb = types; is_glob=false}
 
+        | Emitted sym -> sym
+        | Monitor(f, llvm) ->
+            let sym = emit' ctx llvm
+            f sym
+            sym
         | Locate(loc, llvm) ->
             try
                 emit' ctx llvm

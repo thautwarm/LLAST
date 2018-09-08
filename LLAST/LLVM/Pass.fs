@@ -8,7 +8,7 @@ let rec visit (ctx : context) (update : context -> llvm -> llvm) ast : llvm =
 and fmap ctx f ast =
     let pctx = f ctx
     match ast with
-    | IfExp(ty, cond, thenBlock, elseBlock) -> IfExp(ty, pctx cond, pctx thenBlock, pctx elseBlock)
+    | IfExp(cond, thenBlock, elseBlock)     -> IfExp(pctx cond, pctx thenBlock, pctx elseBlock)
     | WhileExp(cond, body)                  -> WhileExp(pctx cond, pctx body)
     | Bin(op, a, b)                         -> Bin(op, (f ctx) a, (f ctx) b)
     | App(a, xs)                            -> App((f ctx) a, List.map (f ctx) xs)

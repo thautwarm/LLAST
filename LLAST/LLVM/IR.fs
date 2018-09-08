@@ -1,7 +1,10 @@
 ﻿module LL.IR
+open LL.Infras
 (**
 Meta language constructs which could be emitted to LLVM IR.
 *)
+
+
 
 type location = {
 (**
@@ -31,7 +34,7 @@ type ``type`` =
 | Func  of ``type`` list * ``type``
 | Ptr   of ``type``
 | Alias of name: string
-| Label      (** not sure to handle make abstractions for label type*)
+| Label
 | Terminator (** only works when jump appears inner expression.*)
 | Void
 | PendingTy of ``type`` undecided
@@ -40,7 +43,7 @@ type llvm =
 (** NOT EMMITABLE BEGINS*)
 
 (** control flow constructs*)
-| IfExp of ``type`` *  cond : llvm * thenBlock : llvm * elseBlock : llvm
+| IfExp of llvm * thenBlock : llvm * elseBlock : llvm
 | WhileExp of cond : llvm * body : llvm
 (** NOT EMMITABLE ENDS*)
 
@@ -60,6 +63,7 @@ type llvm =
 
 (** define function **)
 | Lambda      of args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
+
 | Defun       of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
 
 | Decl        of name: string * arg_tys: ``type`` list * ret_ty: ``type``
@@ -71,6 +75,7 @@ type llvm =
 (** control flow*)
 | Switch      of cond: llvm * cases: (llvm * string) list * default': string
 | IndrBr      of cond: llvm * labels: string list
+
 | Return      of llvm
 | Mark        of name: string (** make label*)
 | Branch      of cond: llvm * iftrue: string * iffalse: string
@@ -92,6 +97,7 @@ including: load, store, alloca, getelementptr
             insertelement
 *)
 | Alloca      of ``type``
+| AllocaTo    of ``type`` * unmangled_name : string
 | Load        of subject: llvm
 | Store       of subject: llvm * data: llvm
 | GEP         of subject: llvm * idx : llvm * offsets: int list
@@ -103,7 +109,10 @@ including: load, store, alloca, getelementptr
 (** others *)
 | Suite       of llvm list
 | Locate      of location * llvm
-| PendingLLVM of llvm undecided
+| Emitted     of symbol
+| Monitor     of (symbol -> unit) * llvm
+| Undecided   of (unit -> llvm)
+with static member pending f = Undecided f
 (**
 switch, indirectbr, return are all terminators and returns Wildcard.
 
@@ -144,5 +153,33 @@ and constant =
 | BlockAddr    of fn_name: string * label_name: string
 | Undef        of ``type``
 | PendingConst of constant undecided
+
+and type_table = (string,  ``type``) hashtable
+
+and symbol = {
+    name       : string option
+    ty_tb      : type_table
+    mutable ty : ``type``
+    is_glob    : bool
+}
+
+and context = {
+    ``global`` : (string,   symbol) hashtable
+    local      : (string,   symbol) hashtable
+    consts     : (constant, symbol) hashtable
+    mutable count   : int
+    prefix          : string (** for context mangling usage *)
+}
+
+type proc =
+    | Ordered   of string
+    | Predef    of proc
+    | Combine   of proc * proc
+    | Pending   of (unit -> proc)
+    | NoIndent  of proc
+    | Indent    of proc
+    | Empty
+    static member pending f = Pending f
+
 
 let inline (@) (llvm: llvm) (location: location) = Locate(location, llvm)

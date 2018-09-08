@@ -5,12 +5,9 @@
     <NoWarn>62, 40</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    
-    
-    
-    
-    <Compile Include="LLVM\IR.fs" />
+
     <Compile Include="LLVM\Infras.fs" />
+    <Compile Include="LLVM\IR.fs" />
     <Compile Include="LLVM\Exc.fs" />
     <Compile Include="LLVM\Helper.fs" />
     <Compile Include="LLVM\Emit.fs" />

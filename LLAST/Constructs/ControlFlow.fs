@@ -2,20 +2,39 @@
 
 open LL.IR
 open LL.Infras
+open LL.Helper
+open LL.Exc
 
 let elimIfElse ctx =
     function
-    | IfExp(ty, cond, thenBlock, elseBlock) ->
+    | IfExp(cond, thenBlock, elseBlock) ->
         let truelabel = "truelabel"
         let falselabel = "falselabel"
         let endlabel = "endlabel"
-        Let(".result", Alloca(ty),
+        
+        let symbol_ref = ref void_symbol
+        let allocate_monitor sym = symbol_ref := sym
+        let unify =
+            function
+            | {ty = ty} when ty = Terminator -> ()
+            | {ty = ty} when symbol_ref.Value.ty = Terminator ->
+                symbol_ref.Value.ty <- ty
+            | {ty = ty} when  symbol_ref.Value.ty = ty -> ()
+            | {ty = ty} -> ll_raise <| type_mimatch(ty, symbol_ref.Value.ty)
+            
+            
+        Let(".result",
+            Monitor(allocate_monitor, 
+                    pending <| fun ()-> 
+                    match symbol_ref.Value with
+                    | {ty = ty; name = Some name} -> AllocaTo(ty, name)
+                    | _ -> failwith "impossible"),
             Suite [ Branch(cond, truelabel, falselabel)
                     Mark truelabel
-                    Store(Get(".result"), thenBlock)
+                    Store(Get(".result"), Monitor(unify, thenBlock))
                     Jump(endlabel)
                     Mark(falselabel)
-                    Store(Get(".result"), elseBlock)
+                    Store(Get(".result"), Monitor(unify, elseBlock))
                     Jump(endlabel)
                     Mark(endlabel)
                     Load(Get(".result")) ])
