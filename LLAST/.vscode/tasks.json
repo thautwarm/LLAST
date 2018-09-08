@@ -8,6 +8,12 @@
             "type": "shell",
             "command": "rm ../ir-snippets/*;dotnet run;wsl ./test.sh ", //'lli ../ir-snippets/WhileTestToDouble.ll;echo $?;logout;'
             "problemMatcher": []
+        },
+        {
+            "label": "run parsers",
+            "type": "shell",
+            "command": "dotnet run",
+            "problemMatcher": []
         }
     ]
 }

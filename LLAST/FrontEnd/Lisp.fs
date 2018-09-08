@@ -7,8 +7,8 @@ open FastParse.Parser
 open LL
 let lexerTB = 
     [
-        R "term" "[^\(\)\s\[\]]+"
-        C "paren" ["("; ")"; "["; "]"]
+        R "term" "[^\(\)\s\[\]:]+"
+        C "paren" ["("; ")"; "["; "]"; ":"]
         R "space" "\s+"
     ]
 
@@ -35,7 +35,16 @@ let listl = token_by_value "["
 let listr = token_by_value "]"
 
 let id e = e
+let fst a _ = a
+let snd _ b = b
+let (<.) a b = both a b fst
+let (.>) a b = both a b snd
+let (<.>) a b = both a b (fun a b -> a,b)
 
+let (<@>) f a = trans a f
+let str s = trans (token_by_value s) <| fun token -> token.value
+let name = (fun a -> a.value) <@> term
+let many p = rep p 1 (-1) id
 let rec deftype = 
     let middle = both 
                  <| (both defty' term <| fun _ it -> it.value)
@@ -45,8 +54,6 @@ let rec deftype =
 and ty_literal_lst tokens = 
         rep ty_literal 1 -1 id tokens
 and ty_literal = 
-    
-
     let pa = 
         between listl ty_literal_lst listr
         |> trans 
@@ -59,10 +66,22 @@ and ty_literal =
 and suite = 
     let middle token = rep llvm 1 -1 (fun xs -> IR.Suite(xs)) token
     between listl middle listr
+and lambda xs = 
+    let nametypetuple = l .> name <. (str ":") <.> ty_literal <. r
+    let middle = many nametypetuple
+    let args = listl .> middle <. listr
+    let lambda_ ((a, b), c) = IR.Lambda(a,b,c)
+    let pre   = args <.> ty_literal <.> llvm
+    let middle = lambda_ <@> pre
+    l .> str "lambda" .> middle <. r
+        <| xs
+
+
 and llvm = List.reduce either
                 <| [
                     deftype
                     suite
+                    lambda
                 ]
 
 let lex text = 

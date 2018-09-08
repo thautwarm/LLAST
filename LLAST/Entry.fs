@@ -25,6 +25,14 @@ let codegen (title : string) (llvm : llvm) : unit =
 
 [<EntryPoint>]
 let main args =
+    let testP p s = (Parser.parse p << lex) <| s |> printfn "%A"
+    let testL s = lex <| s |>  printfn "%A"
+    testP llvm "[(defty struct_1 [i32 i32 [i32 custom_ty]])
+             (defty struct_2 [i32 [i32 struct_1]])
+             ]"
+        
+    testP LL.Lisp.lambda "( lambda [ ( asdf : i32) (bbbb:[i32 i32])] i32  (defty struct_2 [i32 [i32 struct_1]])) "
+    
     let formal_args = [ ("arg1", I 32) ]
     let ret_ty = I 32
     let body = Bin(Add, Get "arg1", Get "arg1")
@@ -84,6 +92,7 @@ let main args =
     let else2 = Const <| ID(32, 222L)
     let whole = Defun("main", formal_args, ret_ty, IfExp(cond2, then2, else2))
     codegen "IfThenElse" whole
+    
     let formal_args = []
     let premire after =
         Let("b", Store(Alloca(I 32), Const(ID(32, 0L))), Let("a", Store(Alloca(I 32), Const(ID(32, 0L))), after))
@@ -166,9 +175,4 @@ let main args =
 
     codegen "load-function-pointer" <| Suite [defun]
     
-    (Parser.parse llvm << lex) "[(defty struct_name [i32 i32 [i32 custom_ty]])
-                                 (defty struct_2    [i32 [i32 custom_ty]])
-                                ]
-                                "
-    |> printfn "%A"
     0
