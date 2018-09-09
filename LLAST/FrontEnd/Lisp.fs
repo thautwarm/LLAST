@@ -8,12 +8,12 @@ open FastParse.Lexer
 open FastParse.Parser
 open LL
 open System
-open System.Net.Sockets
 
 
 let erro_report (token: token) msg =
     failwithf "Error occurs at <%s>: %s at line %d, column %d, file %s." token.value msg token.lineno token.colno token.filename
 
+(** parse literal data *)
 let (|FD|ID|UD|NotData|) (tk: token) =
     match tk.value with
     | "true" -> ID(1, 1L)
@@ -49,6 +49,8 @@ let keyword s =
     castMap <- Map.add s "keyword" castMap
     token_by_value_addr s
 
+(** keyword token *)
+
 let def' = keyword "def"
 let lamdba' = keyword "lambda"
 let decl'  = keyword "decl"
@@ -76,19 +78,28 @@ let xor' = keyword "xor"
 let type' = keyword "type"
 let alloca' = keyword "alloca"
 let store' = keyword "store"
+let load' = keyword "load"
 let gep' = keyword "gep"
 let undef' = keyword "undef"
 let agg' = keyword "agg"
+let ifte' = keyword "if"
+let add'  = keyword "+"
+let mul' = keyword "*"
+let sub' = keyword "sub"
+let rem' = keyword "rem"
+let eq' = keyword "=="
+let neq' = keyword "!="
+let gt' = keyword ">"
+let lt' = keyword "<"
+let ge' = keyword ">="
+let le' = keyword "<="
+let suite' = keyword "suite"
+
+(** end keyword token *)
 
 let between l parser r =
     let p = both l parser <| fun _ it -> it
     both p r <| fun it _ -> it
-
-let catchExt parser =
-    fun tokens ->
-        try
-            parser tokens
-        with _ -> Nothing
 
 let term = token_by_name "term"
 let l = token_by_value "("
@@ -119,15 +130,25 @@ let op o s = cnst o <@> str s
 let flip f a b = f b a
 let oneOf xs = List.reduce either xs
 
-let rec llvm = oneOf 
-                [ 
-                pgen keyword_dispatch
-                suite
-                IR.Const <@> constant
-                get
-                app ]
+let rec llvm =
+    oneOf
+    <|
+     [
+        (** s-expr startswith keyword *)
+        l *> pgen keyword_dispatch <* r
 
-(* constants *)
+        (** a sequence of s-expr*)
+        suite
+
+        (** literal constant *)
+        IR.Const <@> constant
+
+        (** load symbol *)
+        get
+
+        (** application *)
+        app
+     ]
 
 and app xs = curry IR.App <@> l *> llvm <*> many llvm <* r <| xs
 
@@ -135,8 +156,10 @@ and get xs = IR.Get <@> name <| xs
 
 and suite =
     let middle token = rep llvm 1 -1 IR.Suite token
-    listl *> middle <* listr
+    l *> suite' *> middle <* r
 
+
+(** use `keyword` to dispatch s-expr with specific semantics *)
 and keyword_dispatch =
     let sign =
        token_by_name "keyword"
@@ -155,14 +178,15 @@ and keyword_dispatch =
         | "lambda"  -> return'  lambda
         | "decl"    -> return'  decl
         | "while"   -> return'  whil
+
         | "indrbr"  -> return'  indrbr
-        
         | "switch"  -> return' switch
         | "ret"     -> return' ret
         | "label"   -> return' label
         | "br"      -> return' branch
         | "jump"    -> return' jump
         | "zext"    -> return' zext
+
         | "convert" -> return' convert
         | "bitcast" -> return' bitcast
         | "if"      -> return' ifte
@@ -176,6 +200,7 @@ and keyword_dispatch =
         | "agg"     -> IR.Const <@> aggD |> return'
         (** bin *)
         | "lsh"     -> return' <| bin IR.LSh
+        | "lshr"    -> return' <| bin IR.LShr
         | "ashr"    -> return' <| bin IR.AShr
         | "and"     -> return' <| bin IR.And
         | "or"      -> return' <| bin IR.Or
@@ -199,7 +224,8 @@ and def =
         curry IR.DefTy <@> name <*>  l *> type' *> typeLit <* r
 
     let defun xs =
-        let args = listl *> many0 (l *> name <.> (str ":" *> typeLit <* r)) <* listr
+        let arg = l *> name <.>  typeLit <* r
+        let args = listl *> many0 arg <* listr
         curr4 IR.Defun <@> name <*> args <*> typeLit <*> llvm
         <| xs
 
@@ -262,6 +288,8 @@ and load = IR.Load <@> llvm
 and store = curry IR.Store <@> llvm <*> llvm
 
 and gep = curr3 IR.GEP <@> llvm <*> llvm <*> many int32'
+
+//////////////////////////////////////////////////////////
 
 and arrD = IR.ArrD <@> l *> arr' *> many constant <* r
 
