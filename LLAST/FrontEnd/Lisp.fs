@@ -72,7 +72,8 @@ let (<|>) = either
 let liftA2 a b c = both b c a
 let str s = trans (token_by_value s) <| fun token -> token.value
 let name = (fun a -> a.value) <@> term
-let many p = rep p 1 (-1) id
+let many  p = rep p 1 (-1) id
+let many0 p = rep p 0 (-1) id
 let curry f a b = f (a, b)
 let curr3 f a b c = f (a, b, c)
 let curr4 f a b c d = f (a, b, c, d)
@@ -119,12 +120,33 @@ and suite =
     listl *> middle <* listr
 
 and lambda xs =
-    let middle = many (l *> name <* (str ":") <.> typeLit <* r)
+    let middle = many0 (l *> name <* (str ":") <.> typeLit <* r)
     let args = listl *> middle <* listr
     let lambda' a b c = IR.Lambda(a, b, c)
     let middle = lambda' <@> args <*> typeLit <*> llvm
     l *> str "lambda" *> middle <* r <| xs
 
+and defun xs = 
+    let args = listl *> many0 (l *> name <.> (str ":" *> typeLit <* r)) <* listr
+    curr4 IR.Defun <@> l *> str "defun" *> name <*> args <*> typeLit <*> llvm <* r
+    <| xs
+and decl xs = 
+    curr3 IR.Decl <@> l *> str "decl" *> name <*> many typeLit <*> typeLit <* r
+    <| xs
+and switch xs = 
+    let cases = l *> llvm <* str ":" <.> name <* r
+    curr3 IR.Switch <@> l *> str "switch" *> llvm <*> listl *> many cases <* listr <*> name <* r
+    <| xs
+and indrbr xs = 
+    curry IR.IndrBr <@> l *> str "indrbr" *> llvm <*> listl *> many name <* listr <* r
+    <| xs
+and ret xs = IR.Return <@> l *> str "ret" *> llvm <* r <| xs
+and mark = IR.Mark <@> l *> str "mark" *> name <* r
+and branch xs = curr3 IR.Branch <@> l *> str "br" *> llvm <*> name <*> name <* r <| xs
+and jump = IR.Jump <@> l *> str "jump" *> name <* r
+and zeroext xs = curry IR.ZeroExt <@> l *> str "zeroext" *> llvm <*> typeLit <* r <| xs
+and compatCast xs = curry IR.CompatCast <@> l *> str "compatcast" *> llvm <*> typeLit <* r <| xs
+and bitcast xs = curry IR.Bitcast  <@> l *> str "bitcast" *> llvm <*> typeLit <* r <| xs
 and ifte xs =
     let ifte' a b c = IR.IfExp(a, b, c)
     ifte' <@> l *> str "if" *> llvm <*> llvm <*> llvm <* r <| xs
@@ -189,7 +211,25 @@ and store = curry IR.Store <@> l *> str "store" *> llvm <*> llvm <* r
 
 and gep = curr3 IR.GEP <@> l *> str "gep" *> llvm <*> llvm <*> many int32' <* r
 
-and llvm = oneOf <| List.append binOps [ deftype; suite; lambda; ifte; whil; IR.Const <@> constant; get; app ]
+and llvm = oneOf <| List.append binOps [ deftype;
+                                         suite; 
+                                         lambda;
+                                         defun;
+                                         decl;
+                                         switch
+                                         indrbr
+                                         ret
+                                         mark
+                                         branch
+                                         jump
+                                         zeroext
+                                         compatCast
+                                         bitcast
+                                         ifte; 
+                                         whil; 
+                                         IR.Const <@> constant; 
+                                         get; 
+                                         app ]
 
 
 let lex text =
