@@ -37,11 +37,13 @@ let listr = token_by_value "]"
 let id e = e
 let fst a _ = a
 let snd _ b = b
-let (<.) a b = both a b fst
-let (.>) a b = both a b snd
+let (<*) a b = both a b fst
+let (*>) a b = both a b snd
 let (<.>) a b = both a b (fun a b -> a,b)
-
+let (<*>) a b = both a b (<|)
 let (<@>) f a = trans a f
+let (<|>) = either
+let liftA2 a b c = both b c a
 let str s = trans (token_by_value s) <| fun token -> token.value
 let name = (fun a -> a.value) <@> term
 let many p = rep p 1 (-1) id
@@ -50,30 +52,27 @@ let rec deftype =
                  <| (both defty' term <| fun _ it -> it.value)
                  <| ty_literal_lst 
                  <| fun name type_lst -> IR.DefTy(name,type_lst)
-    between l middle r
+    l *> middle <* r
 and ty_literal_lst tokens = 
         rep ty_literal 1 -1 id tokens
 and ty_literal = 
     let pa = 
-        between listl ty_literal_lst listr
-        |> trans 
-        <| fun it -> IR.Agg it 
-    let pb = trans term <| fun token ->
+        IR.Agg <@> <| listl *> ty_literal_lst <* listr
+        
+    let pb = term <@> <| fun token ->
          match token.value with 
          | "i32" -> IR.I 32
          | it    -> IR.Alias it
-    either pa pb
+    pa <|> pb
 and suite = 
     let middle token = rep llvm 1 -1 (fun xs -> IR.Suite(xs)) token
     between listl middle listr
 and lambda xs = 
-    let nametypetuple = l .> name <. (str ":") <.> ty_literal <. r
+    let nametypetuple = l *> name <* (str ":") <.> ty_literal <* r
     let middle = many nametypetuple
-    let args = listl .> middle <. listr
-    let lambda_ ((a, b), c) = IR.Lambda(a,b,c)
-    let pre   = args <.> ty_literal <.> llvm
-    let middle = lambda_ <@> pre
-    l .> str "lambda" .> middle <. r
+    let args = listl *> middle <* listr
+    let middle = IR.Lambda <@> args <*> ty_literal <*> llvm
+    l *> str "lambda" *> middle <* r
         <| xs
 
 
