@@ -32,15 +32,7 @@ let main args =
              ]"
         
     let a = curr3 LL.IR.Bin <@> l *> op LL.IR.Add "+" <*> llvm <*> llvm <* r
-    testP llvm "(a b) "
-    
-    
-
-
-
-
-
-
+    testP llvm "(- 0.2f32 0.2f64) "
 
 
     let formal_args = [ ("arg1", I 32) ]
