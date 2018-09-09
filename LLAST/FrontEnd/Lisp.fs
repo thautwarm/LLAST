@@ -11,22 +11,22 @@ open System
 open System.Net.Sockets
 
 
-let erro_report (token: token) msg = 
+let erro_report (token: token) msg =
     failwithf "Error occurs at <%s>: %s at line %d, column %d, file %s." token.value msg token.lineno token.colno token.filename
 
 let (|FD|ID|UD|NotData|) (tk: token) =
     match tk.value with
     | "true" -> ID(1, 1L)
     | "false"-> ID(1, 0L)
-    | str -> 
+    | str ->
     let idx = str.IndexOfAny([|'u'; 'f'; 'i'|])
     match idx with
-    | -1 -> 
+    | -1 ->
        try ID(32, Int64.Parse str) with :? System.FormatException ->
        try FD(64, Double.Parse str) with :? System.FormatException ->
        NotData
-       
-    | it -> 
+
+    | it ->
     let value, sign, bit = str.[..it-1], str.[it], str.[it + 1..]
     match sign with
     | 'u' -> UD(Int32.Parse bit, UInt64.Parse value)
@@ -35,15 +35,17 @@ let (|FD|ID|UD|NotData|) (tk: token) =
     | _ -> NotData
 
 let lexerTB =
- 
-    [ 
+
+    [
       R "term" "[^\(\)\s\[\]:]+"
       C "paren" [ "("; ")"; "["; "]"; ":" ]
       R "space" "\s+" ]
-   
+
 let castMap =
-    Map <| [ "defun", "keyword"
-             "defty", "keyword" ]
+    Map <| [ "def", "keyword"
+             "lambda", "keyword"
+             "decl", "keyword"
+           ]
 
 let between l parser r =
     let p = both l parser <| fun _ it -> it
@@ -71,6 +73,7 @@ let (<@>) f a = trans a f
 let (<|>) = either
 let liftA2 a b c = both b c a
 let str s = trans (token_by_value s) <| fun token -> token.value
+let keyword s = token_by_value_addr s
 let name = (fun a -> a.value) <@> term
 let many  p = rep p 1 (-1) id
 let many0 p = rep p 0 (-1) id
@@ -86,33 +89,33 @@ let oneOf xs = List.reduce either xs
 
 let rec deftype =
     let middle = curry IR.DefTy <@> name <*> typeLit
-    l *> str "defty" *> middle <* r
+    l *> str "def" *> middle <* r
 
 and typeLit xs =
     let typeLitList = many typeLit
     let agg = IR.Agg <@> (listl *> typeLitList <* listr)
     let arr = (curry IR.Arr) <@> l *> str "Arr" *> int32' <*> typeLit <* r
     let vec = (curry IR.Vec) <@> l *> str "Vec" *> int32' <*> typeLit <* r
-    let func = (curry IR.Func) <@> l *> typeLitList <* str "->" <*> typeLit <* r
-    let ptr = IR.Ptr <@> l *> str "ptr" *> typeLit <* r
-    let voi = cnst IR.Void <@> str "void"
-
+    let func = (curry IR.Func) <@> l *> (str "->" *> typeLitList) <*> typeLit <* r
+    let ptr = IR.Ptr <@> l *> str "Ptr" *> typeLit <* r
+    let voi = cnst IR.Void <@> str "Void"
     let atom =
         (fun token ->
         match token.value with
-        | "bool" -> IR.I 1
-        | "i32" -> IR.I 32
-        | "i8" -> IR.I 8
-        | "i64" -> IR.I 64
-        | "i16" -> IR.I 16
-        | "u32" -> IR.U 32
-        | "u8" -> IR.U 8
-        | "u64" -> IR.U 64
-        | "u16" -> IR.U 16
-        | "f32" -> IR.F 32
-        | "f64" -> IR.F 64
+        | "Bool" -> IR.I 1
+        | "I32" -> IR.I 32
+        | "I8" -> IR.I 8
+        | "I64" -> IR.I 64
+        | "I16" -> IR.I 16
+        | "U32" -> IR.U 32
+        | "U8" -> IR.U 8
+        | "U64" -> IR.U 64
+        | "U16" -> IR.U 16
+        | "F32" -> IR.F 32
+        | "F64" -> IR.F 64
         | it -> IR.Alias it)
         <@> term
+
     List.reduce either [ agg; atom; arr; vec; func; ptr; voi ] <| xs
 
 and suite =
@@ -126,18 +129,18 @@ and lambda xs =
     let middle = lambda' <@> args <*> typeLit <*> llvm
     l *> str "lambda" *> middle <* r <| xs
 
-and defun xs = 
+and defun xs =
     let args = listl *> many0 (l *> name <.> (str ":" *> typeLit <* r)) <* listr
-    curr4 IR.Defun <@> l *> str "defun" *> name <*> args <*> typeLit <*> llvm <* r
+    curr4 IR.Defun <@> l *> str "def" *> name <*> args <*> typeLit <*> llvm <* r
     <| xs
-and decl xs = 
+and decl xs =
     curr3 IR.Decl <@> l *> str "decl" *> name <*> many typeLit <*> typeLit <* r
     <| xs
-and switch xs = 
+and switch xs =
     let cases = l *> llvm <* str ":" <.> name <* r
     curr3 IR.Switch <@> l *> str "switch" *> llvm <*> listl *> many cases <* listr <*> name <* r
     <| xs
-and indrbr xs = 
+and indrbr xs =
     curry IR.IndrBr <@> l *> str "indrbr" *> llvm <*> listl *> many name <* listr <* r
     <| xs
 and ret xs = IR.Return <@> l *> str "ret" *> llvm <* r <| xs
@@ -212,7 +215,7 @@ and store = curry IR.Store <@> l *> str "store" *> llvm <*> llvm <* r
 and gep = curr3 IR.GEP <@> l *> str "gep" *> llvm <*> llvm <*> many int32' <* r
 
 and llvm = oneOf <| List.append binOps [ deftype;
-                                         suite; 
+                                         suite;
                                          lambda;
                                          defun;
                                          decl;
@@ -225,10 +228,10 @@ and llvm = oneOf <| List.append binOps [ deftype;
                                          zeroext
                                          compatCast
                                          bitcast
-                                         ifte; 
-                                         whil; 
-                                         IR.Const <@> constant; 
-                                         get; 
+                                         ifte;
+                                         whil;
+                                         IR.Const <@> constant;
+                                         get;
                                          app ]
 
 

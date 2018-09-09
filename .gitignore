@@ -27,3 +27,5 @@ setup.log
 **/test
 ir-snippets/
 .idea/
+
+.#run_test.py
