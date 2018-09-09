@@ -321,7 +321,7 @@ and load = IR.Load <@> llvm
 
 and store = curry IR.Store <@> llvm <*> llvm
 
-and gep = curr3 IR.GEP <@> llvm <*> llvm <*> many int32'
+and gep = curr3 IR.GEP <@> llvm <*> llvm <*> many0 int32'
 
 //////////////////////////////////////////////////////////
 
@@ -348,8 +348,8 @@ and undef = IR.Undef <@> l *> undef' *> typeLit <* r
 and constant xs = oneOf [cstr; num; arrD; vecD; aggD; undef ] <| xs
 
 and typeLit xs =
-    let typeLitList = many typeLit
-    let agg = IR.Agg         <@> l *> agg' *> typeLitList <* r
+    let typeLitList = many0 typeLit
+    let agg = IR.Agg         <@> l *> agg' *> many typeLit <* r
     let arr = (curry IR.Arr) <@> l *> arr' *> int32' <*> typeLit <* r
     let vec = (curry IR.Vec) <@> l *> vec' *> int32' <*> typeLit <* r
     let func = (curry IR.Func) <@> listl *> (str "->" *> typeLitList) <*> typeLit <* listr

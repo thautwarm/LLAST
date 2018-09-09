@@ -11,9 +11,11 @@ Usually abstract syntax trees constructed by users in the form of algebraic data
 Usage
 ---------
 
-See `LLAST/Entry.fs`, you can run it at `$projectDir/LLAST` with command `dotnet run --project LLAST.fsproj`.
+**For Windows users**
 
-The test scripts are generated into `./ir-snippets`, and you can run them with `python run_tests.py`.
+Use `cd LLAST && dotnet publish -c Release -r win10-x64` to create a executable which could compile a LISP dialect into LLVM IR.  
+
+See examples at `examples/*.lisp`.
 
 High Level Language Constructs
 ---------------------------------------
