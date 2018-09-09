@@ -41,11 +41,44 @@ let lexerTB =
       C "paren" [ "("; ")"; "["; "]"; ":" ]
       R "space" "\s+" ]
 
-let castMap =
-    Map <| [ "def", "keyword"
-             "lambda", "keyword"
-             "decl", "keyword"
-           ]
+
+let mutable castMap =
+    Map <| []
+
+let keyword s =
+    castMap <- Map.add s "keyword" castMap
+    token_by_value_addr s
+
+let def' = keyword "def"
+let lamdba' = keyword "lambda"
+let decl'  = keyword "decl"
+let while' = keyword "while"
+let indrbr' = keyword "indrbr"
+let arr' = keyword "arr"
+let vec' = keyword "vec"
+let ptr' = keyword "ptr"
+let void' = keyword "void"
+let switch' = keyword "switch"
+let ret' = keyword "ret"
+let label' = keyword "label"
+let br' = keyword "br"
+let jump' = keyword "jump"
+let zext' = keyword "zext"
+let convert' = keyword "convert"
+let bitcast' = keyword "bitcast"
+let if' = keyword "if"
+let lsh' = keyword "lsh"
+let lshr' = keyword "lshr"
+let ashr' = keyword "ashr"
+let and' = keyword "and"
+let or' = keyword "or"
+let xor' = keyword "xor"
+let type' = keyword "type"
+let alloca' = keyword "alloca"
+let store' = keyword "store"
+let gep' = keyword "gep"
+let undef' = keyword "undef"
+let agg' = keyword "agg"
 
 let between l parser r =
     let p = both l parser <| fun _ it -> it
@@ -55,7 +88,7 @@ let catchExt parser =
     fun tokens ->
         try
             parser tokens
-        with :? System.FormatException -> Nothing
+        with _ -> Nothing
 
 let term = token_by_name "term"
 let l = token_by_value "("
@@ -73,7 +106,6 @@ let (<@>) f a = trans a f
 let (<|>) = either
 let liftA2 a b c = both b c a
 let str s = trans (token_by_value s) <| fun token -> token.value
-let keyword s = token_by_value_addr s
 let name = (fun a -> a.value) <@> term
 let many  p = rep p 1 (-1) id
 let many0 p = rep p 0 (-1) id
@@ -87,97 +119,155 @@ let op o s = cnst o <@> str s
 let flip f a b = f b a
 let oneOf xs = List.reduce either xs
 
-let rec deftype =
-    let middle = curry IR.DefTy <@> name <*> typeLit
-    l *> str "def" *> middle <* r
+let rec llvm = oneOf 
+                [ 
+                pgen keyword_dispatch
+                suite
+                IR.Const <@> constant
+                get
+                app ]
 
-and typeLit xs =
-    let typeLitList = many typeLit
-    let agg = IR.Agg <@> (listl *> typeLitList <* listr)
-    let arr = (curry IR.Arr) <@> l *> str "Arr" *> int32' <*> typeLit <* r
-    let vec = (curry IR.Vec) <@> l *> str "Vec" *> int32' <*> typeLit <* r
-    let func = (curry IR.Func) <@> l *> (str "->" *> typeLitList) <*> typeLit <* r
-    let ptr = IR.Ptr <@> l *> str "Ptr" *> typeLit <* r
-    let voi = cnst IR.Void <@> str "Void"
-    let atom =
-        (fun token ->
-        match token.value with
-        | "Bool" -> IR.I 1
-        | "I32" -> IR.I 32
-        | "I8" -> IR.I 8
-        | "I64" -> IR.I 64
-        | "I16" -> IR.I 16
-        | "U32" -> IR.U 32
-        | "U8" -> IR.U 8
-        | "U64" -> IR.U 64
-        | "U16" -> IR.U 16
-        | "F32" -> IR.F 32
-        | "F64" -> IR.F 64
-        | it -> IR.Alias it)
-        <@> term
+(* constants *)
 
-    List.reduce either [ agg; atom; arr; vec; func; ptr; voi ] <| xs
+and app xs = curry IR.App <@> l *> llvm <*> many llvm <* r <| xs
+
+and get xs = IR.Get <@> name <| xs
 
 and suite =
     let middle token = rep llvm 1 -1 IR.Suite token
     listl *> middle <* listr
 
-and lambda xs =
-    let middle = many0 (l *> name <* (str ":") <.> typeLit <* r)
-    let args = listl *> middle <* listr
-    let lambda' a b c = IR.Lambda(a, b, c)
-    let middle = lambda' <@> args <*> typeLit <*> llvm
-    l *> str "lambda" *> middle <* r <| xs
+and keyword_dispatch =
+    let sign =
+       token_by_name "keyword"
+    let dispatch tokens =
+        sign tokens >>=
+        function
+        | (token, tokens) ->
+        let return' (parser: IR.llvm parser) =
+            let new_parser tokens =
+                parser tokens >>=
+                fun (a, tokens) ->
+                Just(IR.Locate({lineno = token.lineno; colno = token.colno; filename = token.filename}, a), tokens)
+            Just(new_parser, tokens)
 
-and defun xs =
-    let args = listl *> many0 (l *> name <.> (str ":" *> typeLit <* r)) <* listr
-    curr4 IR.Defun <@> l *> str "def" *> name <*> args <*> typeLit <*> llvm <* r
-    <| xs
+        match token.value with
+        | "lambda"  -> return'  lambda
+        | "decl"    -> return'  decl
+        | "while"   -> return'  whil
+        | "indrbr"  -> return'  indrbr
+        
+        | "switch"  -> return' switch
+        | "ret"     -> return' ret
+        | "label"   -> return' label
+        | "br"      -> return' branch
+        | "jump"    -> return' jump
+        | "zext"    -> return' zext
+        | "convert" -> return' convert
+        | "bitcast" -> return' bitcast
+        | "if"      -> return' ifte
+        | "alloca"  -> return' alloca
+        | "load"    -> return' load
+        | "store"   -> return' store
+        | "gep"     -> return' gep
+        (** constant *)
+        | "arr"     -> IR.Const <@> arrD |> return'
+        | "vec"     -> IR.Const <@> vecD |> return'
+        | "agg"     -> IR.Const <@> aggD |> return'
+        (** bin *)
+        | "lsh"     -> return' <| bin IR.LSh
+        | "ashr"    -> return' <| bin IR.AShr
+        | "and"     -> return' <| bin IR.And
+        | "or"      -> return' <| bin IR.Or
+        | "xor"     -> return' <| bin IR.XOr
+        | "+"       -> return' <| bin IR.Add
+        | "-"       -> return' <| bin IR.Sub
+        | "*"       -> return' <| bin IR.Mul
+        | "%"       -> return' <| bin IR.Rem
+        | "=="      -> return' <| bin IR.Eq
+        | "!="      -> return' <| bin IR.Ne
+        | ">"       -> return' <| bin IR.Gt
+        | "<"       -> return' <| bin IR.Lt
+        | ">="      -> return' <| bin IR.Ge
+        | "<="      -> return' <| bin IR.Gt
+        | "def"     -> return' def
+        | _         -> Nothing
+    dispatch
+
+and def =
+    let deftype =
+        curry IR.DefTy <@> name <*>  l *> type' *> typeLit <* r
+
+    let defun xs =
+        let args = listl *> many0 (l *> name <.> (str ":" *> typeLit <* r)) <* listr
+        curr4 IR.Defun <@> name <*> args <*> typeLit <*> llvm
+        <| xs
+
+    let defvar =
+        curry IR.DefVar <@> name <*> constant
+
+    either deftype
+    <| either defun defvar
+
 and decl xs =
-    curr3 IR.Decl <@> l *> str "decl" *> name <*> many typeLit <*> typeLit <* r
+    curr3 IR.Decl <@> name <*> many typeLit <*> typeLit
     <| xs
+
 and switch xs =
-    let cases = l *> llvm <* str ":" <.> name <* r
-    curr3 IR.Switch <@> l *> str "switch" *> llvm <*> listl *> many cases <* listr <*> name <* r
+    let cases = l *> llvm <.> name <* r
+    curr3 IR.Switch <@>
+    llvm <*> listl *> many cases <* listr <*> name
     <| xs
-and indrbr xs =
-    curry IR.IndrBr <@> l *> str "indrbr" *> llvm <*> listl *> many name <* listr <* r
-    <| xs
-and ret xs = IR.Return <@> l *> str "ret" *> llvm <* r <| xs
-and mark = IR.Mark <@> l *> str "mark" *> name <* r
-and branch xs = curr3 IR.Branch <@> l *> str "br" *> llvm <*> name <*> name <* r <| xs
-and jump = IR.Jump <@> l *> str "jump" *> name <* r
-and zeroext xs = curry IR.ZeroExt <@> l *> str "zeroext" *> llvm <*> typeLit <* r <| xs
-and compatCast xs = curry IR.CompatCast <@> l *> str "compatcast" *> llvm <*> typeLit <* r <| xs
-and bitcast xs = curry IR.Bitcast  <@> l *> str "bitcast" *> llvm <*> typeLit <* r <| xs
+
+and ret xs = IR.Return <@> llvm <| xs
+
+and label = IR.Mark <@> name
+
+and branch xs = curr3 IR.Branch <@> llvm <*> name <*> name <| xs
+
+and jump = IR.Jump <@> name
+
+and bin op =
+    fun a b -> IR.Bin(op, a, b)
+    <@> llvm <*> llvm
+
+and zext xs = curry IR.ZeroExt <@> llvm <*> typeLit <| xs
+
+and convert xs = curry IR.CompatCast <@> llvm <*> typeLit <| xs
+
+and bitcast xs = curry IR.Bitcast <@> llvm <*> typeLit <| xs
+
 and ifte xs =
-    let ifte' a b c = IR.IfExp(a, b, c)
-    ifte' <@> l *> str "if" *> llvm <*> llvm <*> llvm <* r <| xs
+    curr3 IR.IfExp <@>
+    llvm <*> llvm <*> llvm
+    <| xs
 
-and whil xs = curry IR.WhileExp <@> l *> str "while" *> llvm <*> llvm <* r <| xs
 
-and bin (o, s) = fun xs -> curr3 IR.Bin <@> l *> op o s <*> llvm <*> llvm <* r <| xs
+and indrbr xs =
+    curry IR.IndrBr <@> llvm <*> listl *> many name <* listr
+    <| xs
 
-and binOps =
-    List.map bin [ (IR.Add, "+")
-                   (IR.Sub, "-")
-                   (IR.Mul, "*")
-                   (IR.Div, "/")
-                   (IR.Rem, "%")
-                   (IR.LSh, "lsh")
-                   (IR.LShr, "lshr")
-                   (IR.LShr, "ashr")
-                   (IR.And, "and")
-                   (IR.Or, "or")
-                   (IR.XOr, "xor")
-                   (IR.Eq, "==")
-                   (IR.Gt, ">")
-                   (IR.Ge, ">=")
-                   (IR.Lt, "<")
-                   (IR.Le, "<=")
-                   (IR.Ne, "!=") ]
+and whil xs = curry IR.WhileExp <@> llvm <*> llvm <| xs
 
-(* constants *)
+and lambda xs =
+    let middle = many0 (l *> name <.> typeLit <* r)
+    let args = listl *> middle <* listr
+    curr3 IR.Lambda <@> args <*> typeLit <*> llvm
+    <| xs
+
+and alloca = IR.Alloca <@> typeLit
+
+and load = IR.Load <@> llvm
+
+and store = curry IR.Store <@> llvm <*> llvm
+
+and gep = curr3 IR.GEP <@> llvm <*> llvm <*> many int32'
+
+and arrD = IR.ArrD <@> l *> arr' *> many constant <* r
+
+and vecD = IR.VecD <@> l *> vec' *> many constant <* r
+
+and aggD = IR.AggD <@> l *> agg' *> many constant <* r
 
 and int32' = Int32.Parse <@> name
 
@@ -191,48 +281,36 @@ and num tokens =
         | UD(bit, value) -> return' <| IR.UD(bit, value)
         | NotData -> Nothing
 
+and undef = IR.Undef <@> l *> undef' *> typeLit <* r
 
-and arr = IR.ArrD <@> l *> str "ArrD" *> many constant <* r
+and constant xs = oneOf [ num; arrD; vecD; aggD; undef ] <| xs
 
-and vec = IR.VecD <@> l *> str "VecD" *> many constant <* r
+and typeLit xs =
+    let typeLitList = many typeLit
+    let agg = IR.Agg <@> (listl *> typeLitList <* listr)
+    let arr = (curry IR.Arr) <@> l *> arr' *> int32' <*> typeLit <* r
+    let vec = (curry IR.Vec) <@> l *> vec' *> int32' <*> typeLit <* r
+    let func = (curry IR.Func) <@> listl *> (str "->" *> typeLitList) <*> typeLit <* listr
+    let ptr = IR.Ptr <@> l *> ptr' *> typeLit <* r
+    let void' = cnst IR.Void <@> void'
+    let atom =
+        (fun token ->
+        match token.value with
+        | "bool" -> IR.I 1
+        | "i32" -> IR.I 32
+        | "i8" -> IR.I 8
+        | "i64" -> IR.I 64
+        | "i16" -> IR.I 16
+        | "u32" -> IR.U 32
+        | "u8" -> IR.U 8
+        | "u64" -> IR.U 64
+        | "u16" -> IR.U 16
+        | "f32" -> IR.F 32
+        | "f64" -> IR.F 64
+        | it -> IR.Alias it)
+        <@> term
+    List.reduce either [ agg; atom; arr; vec; func; ptr; void' ] <| xs
 
-and agg = IR.AggD <@> listl *> many constant <* listr
-
-and undef = IR.Undef <@> l *> str "undef" *> typeLit <* r
-
-and constant xs = oneOf [ num; arr; vec; agg; undef ] <| xs
-
-and app xs = curry IR.App <@> l *> llvm <*> many llvm <* r <| xs
-
-and get xs = IR.Get <@> name <| xs
-
-and alloca = IR.Alloca <@> l *> str "alloca" *> typeLit <* r
-
-and load = IR.Load <@> l *> str "load" *> llvm <* r
-
-and store = curry IR.Store <@> l *> str "store" *> llvm <*> llvm <* r
-
-and gep = curr3 IR.GEP <@> l *> str "gep" *> llvm <*> llvm <*> many int32' <* r
-
-and llvm = oneOf <| List.append binOps [ deftype;
-                                         suite;
-                                         lambda;
-                                         defun;
-                                         decl;
-                                         switch
-                                         indrbr
-                                         ret
-                                         mark
-                                         branch
-                                         jump
-                                         zeroext
-                                         compatCast
-                                         bitcast
-                                         ifte;
-                                         whil;
-                                         IR.Const <@> constant;
-                                         get;
-                                         app ]
 
 
 let lex text =

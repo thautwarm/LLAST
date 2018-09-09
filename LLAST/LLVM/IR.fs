@@ -69,6 +69,8 @@ type llvm =
 
 | Defun       of name: string * args: ``type`` asoc_list * ret_ty: ``type`` * body : llvm
 
+| DefVar      of name: string * constant
+
 | Decl        of name: string * arg_tys: ``type`` list * ret_ty: ``type``
 
 | Const       of constant

@@ -11,12 +11,11 @@ open LL.Exc
 let test (title: string) (ir: llvm) =
     printf "============%s===============\n" title
     let ctx = context.init
-    let proc = ref Empty
     let type_table = hashtable()
-    let emit' = emit <| type_table <| proc
+    let emit' = emit <| type_table
     try
-        emit' ctx <| ir |> ignore
-        printf "%s" proc.Value.to_ir
+        let _, proc = emit' ctx <| ir
+        printf "%s" proc.to_ir
     with LLException(exc) ->
         printf "%A" exc
 
@@ -77,7 +76,7 @@ let ``My test`` () =
     test "jump" whole
 
 
-    let ty_def = DefTy("master", [I 1; I 8; F 32; Agg([I 32; I 64])])
+    let ty_def = DefTy("master", Agg [I 1; I 8; F 32; Agg([I 32; I 64])])
     let defun  =
         Defun(
             "main",

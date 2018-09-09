@@ -484,6 +484,10 @@ let rec emit (types: type_table): context -> llvm -> symbol * proc =
             let name, proc' = insertval' subject val' indices |> assign_tmp ctx >>> proc'
             {ty = ty; name = Some name; ty_tb = types; is_glob=false}, proc'
 
+        | DefVar(name, var) ->
+            let var, proc' = emit' ctx <| Const var
+            ctx.``global``.[name] <- var
+            var, proc'
         | Emitted(sym, proc') -> sym, proc'
         | Monitor(f, llvm) ->
             let sym = emit' ctx llvm
