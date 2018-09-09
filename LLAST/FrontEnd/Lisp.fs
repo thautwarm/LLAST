@@ -13,6 +13,18 @@ open System
 let erro_report (token: token) msg =
     failwithf "Error occurs at <%s>: %s at line %d, column %d, file %s." token.value msg token.lineno token.colno token.filename
 
+
+let parse_str (str: string) = 
+    let rec parse_str =
+        function
+        | [] -> []
+        | [it] -> [it]
+        | ('\\' ::  x :: xs | x :: xs)-> x :: parse_str xs
+    let n = str.Length
+    [for i = 1 to n - 2 do yield str.[i]] |> parse_str
+    |> Array.ofList
+    |> System.String
+
 (** parse literal data *)
 let (|FD|ID|UD|NotData|) (tk: token) =
     match tk.value with
@@ -25,20 +37,22 @@ let (|FD|ID|UD|NotData|) (tk: token) =
        try ID(32, Int64.Parse str) with :? System.FormatException ->
        try FD(64, Double.Parse str) with :? System.FormatException ->
        NotData
-
     | it ->
-    let value, sign, bit = str.[..it-1], str.[it], str.[it + 1..]
-    match sign with
-    | 'u' -> UD(Int32.Parse bit, UInt64.Parse value)
-    | 'i' -> ID(Int32.Parse bit, Int64.Parse value)
-    | 'f' -> FD(Int32.Parse bit, Double.Parse value)
-    | _ -> NotData
+    try
+        let value, sign, bit = str.[..it-1], str.[it], str.[it + 1..]
+        match sign with
+        | 'u' -> UD(Int32.Parse bit, UInt64.Parse value)
+        | 'i' -> ID(Int32.Parse bit, Int64.Parse value)
+        | 'f' -> FD(Int32.Parse bit, Double.Parse value)
+        | _ -> NotData
+    with _ -> NotData
 
 let lexerTB =
 
     [
-      R "term" "[^\(\)\s\[\]:]+"
-      C "paren" [ "("; ")"; "["; "]"; ":" ]
+      R "cstr"  "\"([^\\\"]+|\\\.)*?\""
+      R "term" "[^\(\)\s\[\]\"]+"
+      C "paren" [ "("; ")"; "["; "]";]
       R "space" "\s+" ]
 
 
@@ -69,6 +83,7 @@ let zext' = keyword "zext"
 let convert' = keyword "convert"
 let bitcast' = keyword "bitcast"
 let if' = keyword "if"
+let let' = keyword "let"
 let lsh' = keyword "lsh"
 let lshr' = keyword "lshr"
 let ashr' = keyword "ashr"
@@ -85,8 +100,8 @@ let agg' = keyword "agg"
 let ifte' = keyword "if"
 let add'  = keyword "+"
 let mul' = keyword "*"
-let sub' = keyword "sub"
-let rem' = keyword "rem"
+let sub' = keyword "-"
+let rem' = keyword "%"
 let eq' = keyword "=="
 let neq' = keyword "!="
 let gt' = keyword ">"
@@ -94,6 +109,7 @@ let lt' = keyword "<"
 let ge' = keyword ">="
 let le' = keyword "<="
 let suite' = keyword "suite"
+let cstr' = keyword "str"
 
 (** end keyword token *)
 
@@ -117,7 +133,7 @@ let (<@>) f a = trans a f
 let (<|>) = either
 let liftA2 a b c = both b c a
 let str s = trans (token_by_value s) <| fun token -> token.value
-let name = (fun a -> a.value) <@> term
+let name = (fun a -> a.value) <@> (pred (fun (it: token) -> it.name = "term") term)
 let many  p = rep p 1 (-1) id
 let many0 p = rep p 0 (-1) id
 let curry f a b = f (a, b)
@@ -128,6 +144,7 @@ let cnst a _ = a
 let pure' a = cnst a <@> str ""
 let op o s = cnst o <@> str s
 let flip f a b = f b a
+let cstr =  (fun a -> IR.CStr(parse_str a.value)) <@> token_by_name "cstr"
 let oneOf xs = List.reduce either xs
 
 let rec llvm =
@@ -150,14 +167,29 @@ let rec llvm =
         app
      ]
 
-and app xs = curry IR.App <@> l *> llvm <*> many llvm <* r <| xs
+and app = 
+    locate <| fun xs -> curry IR.App <@> l *> llvm <*> many0 llvm <* r <| xs
 
-and get xs = IR.Get <@> name <| xs
+and get = 
+    IR.Get <@> name
+    |> locate
 
 and suite =
     let middle token = rep llvm 1 -1 IR.Suite token
     l *> suite' *> middle <* r
+    |> locate
 
+
+and locate (parser: IR.llvm parser) =
+            fun tokens ->
+            let offset = tokens.offset
+            parser tokens >>=
+            fun (a, tokens) ->
+            let token = tokens.arr.[offset]
+            let located = 
+                IR.Locate({lineno = token.lineno; colno = token.colno; filename = token.filename}, a)
+            Just(located, tokens)
+            
 
 (** use `keyword` to dispatch s-expr with specific semantics *)
 and keyword_dispatch =
@@ -178,7 +210,7 @@ and keyword_dispatch =
         | "lambda"  -> return'  lambda
         | "decl"    -> return'  decl
         | "while"   -> return'  whil
-
+        | "let"     -> return'  let_exp
         | "indrbr"  -> return'  indrbr
         | "switch"  -> return' switch
         | "ret"     -> return' ret
@@ -214,7 +246,7 @@ and keyword_dispatch =
         | ">"       -> return' <| bin IR.Gt
         | "<"       -> return' <| bin IR.Lt
         | ">="      -> return' <| bin IR.Ge
-        | "<="      -> return' <| bin IR.Gt
+        | "<="      -> return' <| bin IR.Le
         | "def"     -> return' def
         | _         -> Nothing
     dispatch
@@ -235,8 +267,10 @@ and def =
     either deftype
     <| either defun defvar
 
+and let_exp = curr3 IR.Let <@> name <*> llvm <*> llvm
+
 and decl xs =
-    curr3 IR.Decl <@> name <*> many typeLit <*> typeLit
+    curr3 IR.Decl <@> name <*> listl *> many typeLit <* listr <*> typeLit
     <| xs
 
 and switch xs =
@@ -311,11 +345,11 @@ and num tokens =
 
 and undef = IR.Undef <@> l *> undef' *> typeLit <* r
 
-and constant xs = oneOf [ num; arrD; vecD; aggD; undef ] <| xs
+and constant xs = oneOf [cstr; num; arrD; vecD; aggD; undef ] <| xs
 
 and typeLit xs =
     let typeLitList = many typeLit
-    let agg = IR.Agg <@> (listl *> typeLitList <* listr)
+    let agg = IR.Agg         <@> l *> agg' *> typeLitList <* r
     let arr = (curry IR.Arr) <@> l *> arr' *> int32' <*> typeLit <* r
     let vec = (curry IR.Vec) <@> l *> vec' *> int32' <*> typeLit <* r
     let func = (curry IR.Func) <@> listl *> (str "->" *> typeLitList) <*> typeLit <* listr

@@ -7,6 +7,48 @@ open LL.Emit
 open LL.Infras
 open LL.Helper
 open LL.Exc
+open LL.Emit
+open LL.Exc
+open LL.Helper
+open LL.IR
+open LL.Infras
+open LL.Pass
+open LL.ControlFlow
+open System.IO
+
+open LL.Lisp
+open FastParse
+
+
+let codegen (title : string) (llvm : llvm) : unit =
+    let ctx = context.init
+    let type_table = hashtable()
+    let emit' = emit <| type_table
+    try
+    let _, proc = emit' ctx <| visit ctx (fun ctx -> elimIfElse ctx >> elimWhile ctx) llvm
+    System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title, proc.to_ir)
+    with LLException(exc) ->
+        printfn "test %s failed" title
+        printfn "%A" exc
+
+
+let parse source =
+    try
+        let llvm = Parser.parse llvm (lex source)
+        
+        let ctx = context.init
+        let type_table = hashtable()
+        let emit' = emit <| type_table
+        try
+        let _, proc = emit' ctx <| visit ctx (fun ctx -> elimIfElse ctx >> elimWhile ctx) llvm
+        printfn "%s" <| proc.to_ir
+        with LLException(exc) ->
+        printfn "compilation failed"
+        printfn "%A" exc
+    with exc -> 
+        printfn "Parse failed"
+        printfn "%A" exc
+    
 
 let test (title: string) (ir: llvm) =
     printf "============%s===============\n" title
@@ -76,19 +118,22 @@ let ``My test`` () =
     test "jump" whole
 
 
-    let ty_def = DefTy("master", Agg [I 1; I 8; F 32; Agg([I 32; I 64])])
-    let defun  =
-        Defun(
-            "main",
-            [],
-            I 64,
-            ExtractVal(
-                  Let("value",
-                      Alloca(Alias "master"),
-                      Load <| GEP(Get "value", Const <| ID(32, 0L), [])
-                      ),
-                  [3; 1])
-            )
-    test "member-accessing" <| Suite [ty_def; defun]
+    //let ty_def = DefTy("master", Agg [I 1; I 8; F 32; Agg([I 32; I 64])])
+    //let defun  =
+    //    Defun(
+    //        "main",
+    //        [],
+    //        I 64,
+    //        ExtractVal(
+    //              Let("value",
+    //                  Alloca(Alias "master"),
+    //                  Load <| GEP(Get "value", Const <| ID(32, 0L), [])
+    //                  ),
+    //              [3; 1])
+    //        )
+    //test "member-accessing" <| Suite [ty_def; defun]
 
+    
+
+    
     0

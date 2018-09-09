@@ -291,6 +291,14 @@ let rec typed_data: constant -> (``type`` * (context -> string)) =
         fun ctx ->
             let eval = fun it -> it(ctx)
             (fmt "{ %s }" <| join (List.map eval data_lst))
+     
+    | CStr(str)        ->
+        let str = str + "\000\000"
+        let ch_arr = str.ToCharArray() 
+                     |> Array.map (int >> fmt "i8 %d")
+                     |> List.ofArray
+                     |> join
+        Arr(str.Length,  I 8) %% (fmt "[ %s ]"  ch_arr)
 
     | BlockAddr(fn_name, label_name) ->
         (Ptr <| I 8)

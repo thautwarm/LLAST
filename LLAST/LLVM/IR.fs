@@ -44,11 +44,11 @@ type llvm =
 (** control flow constructs*)
 | IfExp of cond: llvm * thenBlock : llvm * elseBlock : llvm
 | WhileExp of cond : llvm * body : llvm
+(** NOT EMMITABLE ENDS*)
 (** compiler services*)
 | Emitted     of symbol  * proc
 | Monitor     of (symbol * proc-> unit) * llvm
 | Rewrite     of llvm array * ((symbol * proc) array -> llvm)
-(** NOT EMMITABLE ENDS*)
 
 
 
@@ -150,6 +150,7 @@ and constant =
 | UD    of bit: int * value: uint64
 | ID    of bit: int * value: int64
 | FD    of bit: int * value: float
+| CStr  of string (** char[n] *)
 | ArrD  of constant list
 | VecD  of constant list
 | AggD  of constant list

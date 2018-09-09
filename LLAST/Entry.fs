@@ -23,10 +23,16 @@ let codegen (title : string) (llvm : llvm) : unit =
         printfn "test %s failed" title
         printfn "%A" exc
 
+let parse source =
+    let llvm = Parser.parse llvm (lex source)
+    printfn "%A" llvm
+
 [<EntryPoint>]
 let main args =
+   
+    //parse code
     let sourcePath = args.[0]
-    let llPath = sourcePath+".ll"
+    let llPath = sourcePath + ".ll"
     let source = System.IO.File.ReadAllText(sourcePath)
     try
         let llvm = Parser.parse llvm (lex source)
@@ -36,11 +42,9 @@ let main args =
         try
         let _, proc = emit' ctx <| visit ctx (fun ctx -> elimIfElse ctx >> elimWhile ctx) llvm
         System.IO.File.WriteAllText(llPath, proc.to_ir)
-        
         with LLException(exc) ->
         printfn "compilation failed"
         printfn "%A" exc
-
     with exc -> 
         printfn "Parse failed"
         printfn "%A" exc
