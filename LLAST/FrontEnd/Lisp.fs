@@ -1,6 +1,7 @@
 ﻿module LL.Lisp
 
 module IR = open LL.IR
+open System
 open FastParse.Infras
 open FastParse.Lexer
 open FastParse.Parser
@@ -49,20 +50,20 @@ let curr3 f a b c = f(a,b,c)
 let curr4 f a b c d = f(a,b,c,d)
 let br a = l *> a <* r
 let cnst a _ = a
+let pure' a = cnst a <@> str ""
 let op o s = cnst o <@> str s
 let flip f a b = f b a
-let oneOf = List.reduce either
+let oneOf xs = List.reduce either xs
 let rec deftype = 
     let middle = curry IR.DefTy <@> name <*> typeLit
     l *> str "defty" *> middle <* r
 
-and int = (fun token -> Int32.Parse (token.value) ) <@> term
 and typeLit xs = 
     let typeLitList = many typeLit
     let agg =
         IR.Agg <@> (listl *> typeLitList <* listr)
-    let arr = (curry IR.Arr) <@> l *> str "Arr" *> int <*> typeLit <* r
-    let vec = (curry IR.Vec) <@> l *> str "Vec" *> int <*> typeLit <* r
+    let arr = (curry IR.Arr) <@> l *> str "Arr" *> int32' <*> typeLit <* r
+    let vec = (curry IR.Vec) <@> l *> str "Vec" *> int32' <*> typeLit <* r
     let func = (curry IR.Func) <@> l *> typeLitList <* str "->" <*> typeLit <* r
     let ptr = IR.Ptr <@> l *> str "ptr" *> typeLit <* r
     let voi = cnst IR.Void <@> str "void"
@@ -87,9 +88,10 @@ and typeLit xs =
 and suite = 
     let middle token = rep llvm 1 -1 IR.Suite token
     listl *> middle <* listr
+
+
 and lambda xs = 
-    let nametypetuple = l *> name <* (str ":") <.> typeLit <* r
-    let middle = many nametypetuple
+    let middle = many ( l *> name <* (str ":") <.> typeLit <* r)
     let args = listl *> middle <* listr
     let lambda' a b c = IR.Lambda(a,b,c)
     let middle = lambda' <@> args <*> typeLit <*> llvm
@@ -115,6 +117,7 @@ and binOps = List.map bin
                     (IR.LShr,"ashr")
                     (IR.And, "and")
                     (IR.Or,  "or")
+                    (IR.XOr, "xor")
                     (IR.Eq,  "==")
                     (IR.Gt,  ">")
                     (IR.Ge,  ">=")
@@ -124,26 +127,37 @@ and binOps = List.map bin
                 ]
 
 (* constants *)
-and ud = (flip << curry) IR.UD <@> (UInt64.Parse <@> name) <* str "u" <*> (Int32.Parse <@> name)
-and irid = (flip << curry) IR.ID <@> (Int64.Parse <@> name) <* str "i" <*> (Int32.Parse <@> name)
-and fd = (flip << curry) IR.FD <@> (Double.Parse <@> name) <* str "f" <*> (Int32.Parse <@> name)
+and int32' = try Int32.Parse <@> name with _ -> cnst Nothing
+and double' = try Double.Parse <@> name with _ -> cnst Nothing
+and int64' = try Int64.Parse <@> name with _ -> cnst Nothing
+and uint64' = try UInt64.Parse <@> name with _ -> cnst Nothing
+and fd = (fun a b -> IR.FD(b,a)) <@> double' <* str "f" <*> int32'
+and ud = (fun a b -> IR.UD(b,a)) <@> uint64' <* str "u" <*> int32'
+and irid = (fun a b -> IR.ID(b,a)) <@> int64' <* str "i" <*> int32'
 and arrd = IR.ArrD <@> l *> str "ArrD" *> many constants <* r
 and vecd = IR.VecD <@> l *> str "VecD" *> many constants <* r
 and aggd = IR.AggD <@> listl *> many constants <* listr
 and undef = IR.Undef <@> l *> str "undef" *> typeLit <* r
 
-and constants xs = List.reduce either [ud; irid; fd; arrd; vecd; aggd; undef] xs
+and constants xs = oneOf [ud; irid; fd; arrd; vecd; aggd; undef] xs
 and const' = IR.Const <@> constants
+and app xs = curry IR.App <@> l *> llvm <*> many llvm <* r <| xs
+and get xs = IR.Get <@> name <| xs
+and alloca = IR.Alloca <@> l *> str "alloca" *> typeLit <* r
+and load = IR.Load <@> l *> str "load" *> llvm <* r
+and store = curry IR.Store <@> l *> str "store" *> llvm <*> llvm <* r
+and gep = curr3 IR.GEP <@> l *> str "gep" *> llvm <*> llvm <*> many int32' <* r
 and llvm = oneOf
-                <| List.append [
-                    
+                <| List.append binOps [
                     deftype
                     suite
                     lambda
                     ifte
                     whil
+                    get
                     const'
-                ] binOps
+                    app
+                ]
 
 let lex text = 
    

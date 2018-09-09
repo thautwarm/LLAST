@@ -32,9 +32,9 @@ let main args =
              ]"
         
     let a = curr3 LL.IR.Bin <@> l *> op LL.IR.Add "+" <*> llvm <*> llvm <* r
-    testP llvm  "(- ( defty a (Vec 12 f64)) ( defty a (Vec 12 f64))) "
+    testP llvm "(a b) "
     
-
+    
 
 
 
