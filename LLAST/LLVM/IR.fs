@@ -42,10 +42,10 @@ type ``type`` =
 type llvm =
 (** NOT EMMITABLE BEGINS*)
 (** control flow constructs*)
-| IfExp of llvm * thenBlock : llvm * elseBlock : llvm
+| IfExp of cond: llvm * thenBlock : llvm * elseBlock : llvm
 | WhileExp of cond : llvm * body : llvm
 (** compiler services*)
-| Emitted     of symbol * proc
+| Emitted     of symbol  * proc
 | Monitor     of (symbol * proc-> unit) * llvm
 | Rewrite     of llvm array * ((symbol * proc) array -> llvm)
 (** NOT EMMITABLE ENDS*)
@@ -73,7 +73,7 @@ type llvm =
 
 | Const       of constant
 
-| DefTy       of name: string * ``type`` list
+| DefTy       of name: string * ``type``
 
 (** control flow*)
 | Switch      of cond: llvm * cases: (llvm * string) list * default': string

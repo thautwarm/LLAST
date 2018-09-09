@@ -310,8 +310,7 @@ let rec emit (types: type_table): context -> llvm -> symbol * proc =
                 fmt "switch %s, %s [ %s ]" cond default' label_pairs |> Ordered
 
             terminator, pending pending_code |> combine proc'
-        | DefTy(name, ty_lst) ->
-            let ty = Agg(ty_lst)
+        | DefTy(name, ty) ->
             types.[name] <- ty
             let defty = fmt "%%.struct.%s = type %s" name <| dump_type ty
             void_symbol, Predef <| Ordered defty

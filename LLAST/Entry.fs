@@ -31,8 +31,18 @@ let main args =
              (defty struct_2 [i32 [i32 struct_1]])
              ]"
         
-    testP LL.Lisp.lambda "( lambda [ ( asdf : i32) (bbbb:[i32 i32])] i32  (defty struct_2 [i32 [i32 struct_1]])) "
+    let a = curr3 LL.IR.Bin <@> l *> op LL.IR.Add "+" <*> llvm <*> llvm <* r
+    testP llvm  "(- ( defty a (Vec 12 f64)) ( defty a (Vec 12 f64))) "
     
+
+
+
+
+
+
+
+
+
     let formal_args = [ ("arg1", I 32) ]
     let ret_ty = I 32
     let body = Bin(Add, Get "arg1", Get "arg1")
@@ -110,11 +120,11 @@ let main args =
     codegen "whileTestToDouble" whole
     let ty_def =
         DefTy("master",
-              [ I 1
-                I 8
-                F 32
-                Agg([ I 32
-                      I 64 ]) ])
+              Agg [ I 1
+                    I 8
+                    F 32
+                    Agg([ I 32
+                          I 64 ]) ])
 
     let defun =
         Defun
@@ -124,8 +134,8 @@ let main args =
     codegen "member-accessing" <| Suite [ ty_def; defun ]
     let ty_def =
         DefTy("redyred",
-              [ I 32
-                I 8 ])
+              Agg([ I 32
+                    I 8 ]))
 
     let defun =
         Defun("main", [], I 32,
