@@ -2,16 +2,21 @@ module LL.Emit
 open LL.Infras
 open LL.Helper
 open LL.Exc
-open System.Diagnostics
 open LL.IR
 
 type 'v arraylist = System.Collections.Generic.List<'v>
+let combine a b = Combine(a, b)
 
-let rec emit (types: type_table) (proc: ref<proc>) =
-    let combine b =
-        proc.contents <- Combine(proc.contents, b)
+let (>>>) (tp: 'a * proc) proc =
+    match tp with
+    | a, b -> a, combine proc b
 
-    let rec emit' (ctx: context): (llvm -> symbol)  =
+
+let rec emit (types: type_table): context -> llvm -> symbol * proc =
+
+
+
+    let rec emit' (ctx: context): (llvm -> symbol * proc)  =
 
         let assign_tmp (ctx: context) codestr =
             let name = ctx.alloc_name
@@ -24,8 +29,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                        <| dump_sym sym
                        <| dump_type dest
                 let name, proc' = assign_tmp ctx codestr
-                combine proc'
-                {ty=dest; name=Some name; ty_tb=types; is_glob=false}
+                {ty=dest; name=Some name; ty_tb=types; is_glob=false}, proc'
 
         let rec is_int_ext = function
                 | Terminator, I _
@@ -35,7 +39,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 | _ -> false
 
         let compat_cast src dest =
-            let {ty=ty} as sym = emit' ctx src
+            let ({ty=ty} as sym, proc') = emit' ctx src
             let inst =
                 let rec get_inst =
                     function
@@ -51,72 +55,81 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     | F a, F b when a < b -> "fpext"
                     | _ -> InvalidUsage(fmt "%s -> %s" <| dump_type ty <| dump_type dest, "convert") |> ll_raise
                 in get_inst(ty, dest)
-            if inst = "" then sym
+            if inst = "" then sym, proc'
             else
-            convert_routine inst sym dest
+            match convert_routine inst sym dest with
+            | sym, proc'' -> sym, combine proc' proc''
 
         let load_llvm ptr =
             match ptr with
             | {ty = Ptr val_ty} ->
                 let name, proc' = load' ptr |> assign_tmp ctx
-                combine proc'
-                {name=Some name; ty_tb=types; is_glob=false; ty=val_ty}
+                {name=Some name; ty_tb=types; is_glob=false; ty=val_ty}, proc'
             | _ ->
             UnexpectedUsage("Pointer type", dump_type ptr.ty, "`load` type") |> ll_raise
 
-        let store_llvm (ptr) ({ty = ty_of_data} as data) =
+        let store_llvm ptr ({ty = ty_of_data} as data) =
             match ptr with
             | {ty=Ptr val_ty} ->
-                if val_ty <> ty_of_data then
-                    UnexpectedUsage(dump_type val_ty, dump_type ty_of_data, "`store` arg type") |> ll_raise
+                if val_ty =||= ty_of_data |> not then
+                    type_mimatch(ty_of_data, val_ty) |> ll_raise
                 else
-                Ordered <| store' data ptr |> combine
-                ptr
-            | {ty=ty} -> UnexpectedUsage("Pointer type", dump_type ty, "`store` arg type") |> ll_raise
+                ptr, Ordered <| store' data ptr
+            | {ty=ty} ->
+                failwithf "%A \n %A" ptr ctx.local
+                UnexpectedUsage("Pointer type", dump_type ty, "`store` arg type") |> ll_raise
 
         function
-        | PendingLLVM _ as id -> NotDecidedYet(id) |> ll_raise
+        | Undecided f ->
+            let sym = {name = Some <| ctx.alloc_name; ty = Terminator; ty_tb = types; is_glob = false}
+            let pending_code() =
+                let _, proc' = emit types ctx <| f()
+                proc'
+
+            sym, pending pending_code
         | Const constant ->
             let constant, proc' = get_constant types ctx constant
-            match proc' with
-            | Empty ->
-                ()
-            | _     ->
-                combine <| NoIndent proc'
+            let proc' =
+                match proc' with
+                | Empty -> Empty
+                | _     ->
+                NoIndent proc'
+
             let ty = match constant.ty with Ptr ty -> ty | _ -> failwith "Impossible"
             match ty with
             | I _
-            | F _ ->
-
-               load_llvm constant
+            | F _ -> load_llvm constant >>> proc'
             | _  ->
-               try
-                  Decl("llvm.memcpy.p0i8.p0i8.i64", [Ptr <| I 8; Ptr <| I 8; I 64; I 32; I 1], Void)
-                  |> emit' ctx
-                  |> ignore
-               with LLException(UnexpectedUsage(_, _, "declaration")) ->
-                  ()
+               let proc' = 
+                   try
+                      Decl("llvm.memcpy.p0i8.p0i8.i64", [Ptr <| I 8; Ptr <| I 8; I 64; I 32; I 1], Void)
+                      |> emit' ctx
+                      |> snd
+                      |> combine proc'
+                   with LLException(UnexpectedUsage(_, _, "declaration")) ->
+                      proc'
                let size, align = get_size_and_align types ty
-               let ret = emit' ctx <| Alloca(ty)
-               let bitcasted = convert_routine "bitcast" ret <| Ptr(I 8)
+               let ret, proc' = emit' ctx <| Alloca(ty) >>> proc'
+               let bitcasted, proc' = convert_routine "bitcast" ret <| Ptr(I 8) >>> proc'
                let codestr =
                    fmt "call void @llvm.memcpy.p0i8.p0i8.i64(%s, i8* bitcast(%s to i8*), i64 %d, i32 %d, i1 false)"
                         <| dump_sym bitcasted
                         <| dump_sym constant
                         <| size
                         <| align
-               combine <| Ordered codestr
-               load_llvm ret
+               let proc' = combine proc' <| Ordered codestr
+               load_llvm ret >>> proc'
+
         | Get name ->
-            ctx.find <| name
+            ctx.find <| name, Empty
 
         | Let(name, value, body) ->
-            let value = emit' ctx value
+            let value, proc' = emit' ctx value
             let count = ctx.count
             ctx.count <- ctx.count + 1
             let ctx = ctx.into (fmt "%d" count)
             ctx.local.[name] <- value
-            emit' ctx body
+            emit' ctx body >>> proc'
         | Decl(name, arg_tys, ret_ty) ->
             if ctx.``global``.ContainsKey name then
                 UnexpectedUsage(fmt "declare %s" name, "declared once", "declaration") |> ll_raise
@@ -124,6 +137,8 @@ let rec emit (types: type_table) (proc: ref<proc>) =
             let func_ty = Func(arg_tys, ret_ty)
             let name' = Some name
             ctx.``global``.[name] <- {ty = func_ty; name = name'; ty_tb = types; is_glob = true}
+
+            void_symbol,
             fmt "declare %s %s(%s)"
                 <| dump_type ret_ty
                 <| actual_name name' true
@@ -131,8 +146,7 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 |> Ordered
                 |> NoIndent
                 |> Predef
-                |> combine
-            void_symbol
+
 
         | (Defun(_, args, ret_ty, body) | Lambda(args, ret_ty, body)) as it ->
             let arg_names, arg_tys = List.unzip args
@@ -183,60 +197,67 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     <| name
                     <| arg_string
                     |> Ordered
-                let inner_proc = ref Empty
-                let body =
-                    emit types inner_proc ctx body
 
-                match body with
-                | {ty=Terminator} -> ()
-                | _ as sym        ->
-                    let ret_stmt = fmt "ret %s" <| dump_sym sym
-                    if sym.ty <> ret_ty then
-                        Message("function return type conflitcs with end of body") <*> type_mimatch(ret_ty, sym.ty) |> ll_raise
-                    else
-                    inner_proc.contents <- Combine(inner_proc.contents, Ordered ret_stmt)
+                let body, proc' = emit types ctx body
+
+                let proc' =
+                    combine
+                    <| proc'
+                    <|
+                    match body with
+                    | {ty=Terminator} -> Empty
+                    | _ as sym        ->
+                        let ret_stmt = fmt "ret %s" <| dump_sym sym
+                        if sym.ty <> ret_ty then
+                            Message("function return type conflitcs with end of body") <*> type_mimatch(ret_ty, sym.ty) |> ll_raise
+                        else Ordered ret_stmt
+
+
                 let endl = fmt "}" |> Ordered
-                let defun = Indent(inner_proc.Value)
+                let defun = Indent(proc')
                 let defun = Combine(defun, endl)
                 let defun = Combine(head, defun)
                 NoIndent <| Predef defun
-            combine <| Pending delay
-            sym
+            sym, Pending delay
+
         | ZeroExt(src, dest) ->
-            let sym = emit' ctx src
-            if is_int_ext(sym.ty, dest) then convert_routine "zext" sym dest
+            let sym, proc' = emit' ctx src
+            if is_int_ext(sym.ty, dest) then convert_routine "zext" sym dest >>> proc'
             else InvalidUsage(dump_type sym.ty, "zero extending") |> ll_raise
         | Bitcast(src, dest) ->
-            let sym = emit' ctx src
-            convert_routine "bitcast" sym dest
+            let sym, proc' = emit' ctx src
+            convert_routine "bitcast" sym dest >>> proc'
 
         | CompatCast(src, dest) ->
             compat_cast src dest
 
         | Return value ->
-            match emit' ctx value with
-            | {ty=Void}->
-                Ordered "ret void"
-            | _ as sym->
-                fmt "ret %s" <| dump_sym sym |> Ordered
-            |> combine
-            terminator
+            let proc' =
+                match emit' ctx value with
+                | {ty=Void}, proc' ->
+                    combine proc' <| Ordered "ret void"
+                | _ as sym, proc'->
+                    fmt "ret %s" <| dump_sym sym |> Ordered
+                    |> combine proc'
+            terminator, proc'
+
         | IndrBr(cond, labels) ->
-            let cond = emit' ctx cond |> dump_sym
+            let cond, proc' = emit' ctx cond
+            let cond = dump_sym cond
             let pending_code () =
                 let label_string =
                     List.map
                     <| fun label -> dump_sym ctx.local.[label]
                     <| labels
                     |> join
-
                 let codestr = fmt "indirectbr %s, [ %s ]" cond label_string
                 Ordered codestr
-            combine <| Pending pending_code
-            terminator
+
+            terminator, combine proc' <| Pending pending_code
+
         | Mark(name) ->
             let actual_name = ctx.alloc_name
-            fmt "%s:" actual_name |> Ordered |> NoIndent |> combine
+            let proc' = fmt "%s:" actual_name |> Ordered |> NoIndent
             let label: symbol =
                 {
                     name    = Some actual_name
@@ -245,9 +266,9 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     is_glob = false
                  }
             ctx.local.[name] <- label
-            label
+            label, proc'
         | Branch(cond, iftrue, iffalse) ->
-            let cond = emit' ctx cond
+            let cond, proc' = emit' ctx cond
             if cond.ty =||= I 1 |> not then UnexpectedUsage(dump_type cond.ty, "i1", "branch condition") |> ll_raise
             else
             let cond = dump_sym cond
@@ -257,26 +278,28 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 let iftrue = dump_sym ctx.local.[iftrue]
                 let codestr = fmt "br %s, %s, %s" cond iftrue iffalse
                 Ordered codestr
-            combine <| Pending pending_code
-            terminator
+
+            terminator, combine proc' <| Pending pending_code
 
         | Jump(label) ->
             let pending_code() =
-
                 let codestr = fmt "br %s" <| dump_sym ctx.local.[label]
                 Ordered codestr
-            combine <| Pending pending_code
-            terminator
+            terminator, Pending pending_code
 
         | Switch(cond, cases, default') ->
-            let cond = emit' ctx cond |> dump_sym
-            let label_pairs =
+            let cond, proc' = emit' ctx cond
+            let cond =  cond |> dump_sym
+            let procs, label_pairs =
                 List.map
                 <| fun (case, label) ->
-                    let case = emit' ctx case |> dump_sym
-                    fun () -> fmt "%s, %s" case <| dump_sym ctx.local.[label]
-                <| cases
+                    let case, proc' = emit' ctx case
+                    let case = dump_sym case
 
+                    proc', fun () -> fmt "%s, %s" case <| dump_sym ctx.local.[label]
+                <| cases
+                |> List.unzip
+            let proc' = List.fold combine proc' procs
             let pending_code() =
                 let default' = dump_sym ctx.local.[default']
                 let label_pairs =
@@ -285,17 +308,15 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                     <| label_pairs
                     |> join
                 fmt "switch %s, %s [ %s ]" cond default' label_pairs |> Ordered
-            combine <| Pending pending_code
-            terminator
-        | DefTy(name, ty_lst) ->
-            let ty = Agg(ty_lst)
+
+            terminator, pending pending_code |> combine proc'
+        | DefTy(name, ty) ->
             types.[name] <- ty
             let defty = fmt "%%.struct.%s = type %s" name <| dump_type ty
-            Predef <| Ordered defty |> combine
-            void_symbol
+            void_symbol, Predef <| Ordered defty
         | Bin(bin_op, lhs, rhs) as bin ->
-            let {ty=lty; name = lname; is_glob=l_is_glob} = emit' ctx lhs
-            let {ty=rty; name = rname; is_glob=r_is_glob} = emit' ctx rhs
+            let {ty=lty; name = lname; is_glob=l_is_glob}, proc' = emit' ctx lhs
+            let {ty=rty; name = rname; is_glob=r_is_glob}, proc' = emit' ctx rhs >>> proc'
             let ty =
                 if lty <> rty then
                     Message(fmt "Invalid binary operation(%A)" bin_op)
@@ -355,15 +376,15 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 get_inst_and_ret_ty(bin_op, lty)
             let lname = actual_name lname l_is_glob
             let rname = actual_name rname r_is_glob
-            let codestr    = fmt "%s %s %s, %s" inst <| dump_type ty <| lname <| rname
-            let name, proc' = assign_tmp ctx codestr
-            combine proc'
-            {ty=ret_ty; name=Some name; is_glob=false; ty_tb=types}
+            let codestr = fmt "%s %s %s, %s" inst <| dump_type ty <| lname <| rname
+            let name, proc' = assign_tmp ctx codestr >>> proc'
+            {ty=ret_ty; name=Some name; is_glob=false; ty_tb=types}, proc'
         | App(func, args) ->
             let emit'' = emit' ctx
-            let {ty = fn_ty; name = fn_name; is_glob = is_glob} = emit'' func
+            let {ty = fn_ty; name = fn_name; is_glob = is_glob}, proc' = emit'' func
 
-            let args = List.map emit'' args
+            let args, procs = List.map emit'' args |> List.unzip
+            let proc' = List.fold combine proc' procs
             match fn_ty with
             | Func(fn_arg_tys, fn_ret_ty) ->
                 if fn_arg_tys <> [for each in args -> each.ty]
@@ -379,13 +400,12 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 match fn_ret_ty with
                 | Void ->
                     let codestr = fmt "call void %s(%s)" (actual_name fn_name is_glob) arg_string
-                    combine <| Ordered codestr
-                    void_symbol
+
+                    void_symbol, combine proc' <| Ordered codestr
                 | _    ->
                 let codestr = fmt "call %s %s(%s)" <| dump_type fn_ret_ty <| (actual_name fn_name is_glob) <| arg_string
-                let name, proc' = assign_tmp ctx codestr
-                combine proc'
-                {name=Some name; ty = fn_ret_ty; is_glob=false; ty_tb=types}
+                let name, proc' = assign_tmp ctx codestr >>> proc'
+                {name=Some name; ty = fn_ret_ty; is_glob=false; ty_tb=types}, proc'
             | _ ->
             type_mimatch(Func([PendingTy nil_undecided], PendingTy nil_undecided), fn_ty) |> ll_raise
 
@@ -394,76 +414,85 @@ let rec emit (types: type_table) (proc: ref<proc>) =
                 | [expr] ->
                     emit' ctx expr
                 |  expr :: suite ->
-                    emit' ctx expr |> ignore
-                    loop suite
-                | [] -> void_symbol
+                    let _, proc' = emit' ctx expr
+                    loop suite >>> proc'
+                | [] -> void_symbol, Empty
             in loop suite
 
-        | Alloca(ty) ->
-
+        | Alloca ty ->
             let ptr = {ty=Ptr ty; name = Some <| ctx.alloc_name; ty_tb=types; is_glob=false}
             let codestr = alloca' ptr
-            combine <| Ordered codestr
-            ptr
-
+            ptr, Ordered codestr
+        | AllocaTo ptr ->
+            let codestr = alloca' ptr
+            ptr, Ordered codestr
         | Load subject ->
-            load_llvm <| emit' ctx subject
+            let sym, proc' = emit' ctx subject
+            load_llvm sym >>> proc'
 
         | Store(subject, data) ->
-            let data = emit' ctx data
-            let subject = emit' ctx subject
-            store_llvm subject data
+            let data, proc' = emit' ctx data
+            let subject, proc' = emit' ctx subject >>> proc'
+            store_llvm subject data >>> proc'
 
         | GEP(subject, idx, offsets) ->
-            let subject = emit' ctx subject
-            let idx = emit' ctx idx
+            let subject, proc' = emit' ctx subject
+            let idx, proc' = emit' ctx idx >>> proc'
             match subject with
             | {ty = Ptr ty} as ptr ->
                 let idx = dump_sym idx
                 let ret_ty = Ptr <| find_ty types offsets ty
-                let name, proc' = gep' ptr idx offsets  |> assign_tmp ctx
-                combine proc'
-                {name=Some name; ty = ret_ty; is_glob=false; ty_tb=types}
+                let name, proc' = gep' ptr idx offsets  |> assign_tmp ctx >>> proc'
+                {name=Some name; ty = ret_ty; is_glob=false; ty_tb=types}, proc'
             | {ty=ty} ->
             InvalidUsage(dump_type ty, "`getlementptr` arg type") |> ll_raise
+
         | ExtractElem(subject, idx) ->
-            let subject = emit' ctx subject
-            let idx     = emit' ctx idx
+            let subject, proc' = emit' ctx subject
+            let idx, proc'     = emit' ctx idx >>> proc'
             match subject with
             | {ty = Vec(_, ty)} ->
-                let name, proc' = extractelem' subject idx |> assign_tmp ctx
-                combine proc'
-                {ty=ty; name = Some name; ty_tb=types; is_glob = false}
+                let name, proc' = extractelem' subject idx |> assign_tmp ctx >>> proc'
+                {ty=ty; name = Some name; ty_tb=types; is_glob = false}, proc'
             | {ty=ty} ->
             InvalidUsage(dump_type ty, "`extractelement` arg type") |> ll_raise
+
         | InsertElem(subject, val', idx) ->
-            let subject = emit' ctx subject
+            let subject, proc' = emit' ctx subject
             match subject with
             | {ty = Vec(_, ty)} ->
-                let val'    = emit'  ctx val'
-                let idx     = emit' ctx idx
+                let val', proc'    = emit'  ctx val' >>> proc'
+                let idx, proc'     = emit'  ctx idx  >>> proc'
                 if val'.ty =||= ty |> not then
                     Message("`insertelementptr` arg types mismatch") <*> type_mimatch(ty, val'.ty) |> ll_raise
-                let name, proc' = insertelem' subject val' idx |> assign_tmp ctx
-                combine proc'
-                {ty = ty; name = Some name; ty_tb = types; is_glob = false}
+                let name, proc' = insertelem' subject val' idx |> assign_tmp ctx >>> proc'
+                {ty = ty; name = Some name; ty_tb = types; is_glob = false}, proc'
             | {ty=ty} ->
             InvalidUsage(dump_type ty, "`insertelement` arg type") |> ll_raise
 
 
         | ExtractVal(subject, indices) ->
-            let subject = emit' ctx subject
+            let subject, proc' = emit' ctx subject
             let ty = find_ty types indices subject.ty
-            let name, proc' = extractval' subject indices |> assign_tmp ctx
-            combine proc'
-            {ty = ty; name = Some name; ty_tb = types; is_glob=false}
+            let name, proc' = extractval' subject indices |> assign_tmp ctx >>> proc'
+            {ty = ty; name = Some name; ty_tb = types; is_glob=false}, proc'
+
         | InsertVal(subject, val', indices) ->
-            let subject = emit' ctx subject
+            let subject, proc' = emit' ctx subject
             let ty = find_ty types indices subject.ty
-            let val' = emit' ctx val'
-            let name, proc' = insertval' subject val' indices |> assign_tmp ctx
-            combine proc'
-            {ty = ty; name = Some name; ty_tb = types; is_glob=false}
+            let val', proc' = emit' ctx val' >>> proc'
+            let name, proc' = insertval' subject val' indices |> assign_tmp ctx >>> proc'
+            {ty = ty; name = Some name; ty_tb = types; is_glob=false}, proc'
+
+        | Emitted(sym, proc') -> sym, proc'
+        | Monitor(f, llvm) ->
+            let sym = emit' ctx llvm
+            f sym
+            sym
+        | Rewrite(llvm_array, rewrite_fn) ->
+            Array.map <| emit' ctx <| llvm_array
+            |> rewrite_fn
+            |> emit' ctx
 
         | Locate(loc, llvm) ->
             try

@@ -9,20 +9,35 @@ open LL.Pass
 open LL.ControlFlow
 open System.IO
 
+open LL.Lisp
+open FastParse
+
 let codegen (title : string) (llvm : llvm) : unit =
     let ctx = context.init
-    let proc = ref Empty
     let type_table = hashtable()
-    let emit' = emit <| type_table <| proc
+    let emit' = emit <| type_table
     try
-        emit' ctx <| visit ctx (fun ctx -> elimIfElse ctx >> elimWhile ctx) llvm |> ignore
-        System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title, proc.Value.to_ir)
+    let _, proc = emit' ctx <| visit ctx (fun ctx -> elimIfElse ctx >> elimWhile ctx) llvm
+    System.IO.File.WriteAllText(fmt "../ir-snippets/%s.ll" title, proc.to_ir)
     with LLException(exc) ->
         printfn "test %s failed" title
         printfn "%A" exc
 
 [<EntryPoint>]
 let main args =
+    let codegenWithP name s = (lex >> Parser.parse llvm >> codegen name) s
+    let testP p s = (Parser.parse p << lex) <| s
+    let testL s = lex <| s |>  printfn "%A"
+
+    let source = "(defun main [] i32 (ret 12i32))"
+    let ast = testP llvm source
+    printf "%A" ast
+    codegen "maintest" ast
+        
+    let a = curr3 LL.IR.Bin <@> l *> op LL.IR.Add "+" <*> llvm <*> llvm <* r
+    testP llvm "(- 0.2f32 0.2f64) "
+
+
     let formal_args = [ ("arg1", I 32) ]
     let ret_ty = I 32
     let body = Bin(Add, Get "arg1", Get "arg1")
@@ -77,11 +92,12 @@ let main args =
     let cond1 = Bin(Eq, Const(ID(1, 1L)), Const(ID(1, 0L)))
     let then1 = Const <| ID(32, 123L)
     let else1 = Const <| ID(32, 456L)
-    let cond2 = Bin(Eq, IfExp(I 32, cond1, then1, else1), else1)
+    let cond2 = Bin(Eq, IfExp(cond1, then1, else1), else1)
     let then2 = Const <| ID(32, 111L)
     let else2 = Const <| ID(32, 222L)
-    let whole = Defun("main", formal_args, ret_ty, IfExp(I 32, cond2, then2, else2))
+    let whole = Defun("main", formal_args, ret_ty, IfExp(cond2, then2, else2))
     codegen "IfThenElse" whole
+    
     let formal_args = []
     let premire after =
         Let("b", Store(Alloca(I 32), Const(ID(32, 0L))), Let("a", Store(Alloca(I 32), Const(ID(32, 0L))), after))
@@ -99,11 +115,11 @@ let main args =
     codegen "whileTestToDouble" whole
     let ty_def =
         DefTy("master",
-              [ I 1
-                I 8
-                F 32
-                Agg([ I 32
-                      I 64 ]) ])
+              Agg [ I 1
+                    I 8
+                    F 32
+                    Agg([ I 32
+                          I 64 ]) ])
 
     let defun =
         Defun
@@ -113,8 +129,8 @@ let main args =
     codegen "member-accessing" <| Suite [ ty_def; defun ]
     let ty_def =
         DefTy("redyred",
-              [ I 32
-                I 8 ])
+              Agg([ I 32
+                    I 8 ]))
 
     let defun =
         Defun("main", [], I 32,
@@ -122,8 +138,8 @@ let main args =
                   Const <| AggD([ ID(32, 10L)
                                   ID(8, 10L) ]), ExtractVal(Get("c"), [ 0 ])))
 
-    codegen "aggregate constant" <| Suite [ ty_def; defun ]
-
+    codegen "aggregate-constant" <| Suite [ ty_def; defun ]
+    
     let defun =
         Defun(
             "main",
@@ -141,7 +157,6 @@ let main args =
 
     let if_exp =
          IfExp(
-            Func([I 32], I 32),
             Bin(Eq, Const <| ID (32, 1L), Const <| ID (32, 1L)),
             Lambda(
                  [("e", I 32)],
@@ -163,5 +178,6 @@ let main args =
                   ,
                   App(Get("c"), [Const <| ID(32, 2L)])))
 
-    codegen "load function pointer" <| Suite [defun]
+    codegen "load-function-pointer" <| Suite [defun]
+    
     0
